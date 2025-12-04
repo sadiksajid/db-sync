@@ -1,0 +1,18 @@
+/home/seddek/Projects/mysql to psql proxy/target/release/deps/mysql_psql_proxy-b43f69eb2fc133b9.d: src/main.rs src/config.rs src/migrator/mod.rs src/migrator/create_tables.rs src/migrator/data_transfer.rs src/migrator/verify.rs src/realtime/mod.rs src/realtime/binlog_reader.rs src/realtime/pg_writer.rs src/schema/mod.rs src/schema/dependency.rs src/schema/mysql_reader.rs src/schema/pg_converter.rs src/schema/types.rs
+
+/home/seddek/Projects/mysql to psql proxy/target/release/deps/mysql_psql_proxy-b43f69eb2fc133b9: src/main.rs src/config.rs src/migrator/mod.rs src/migrator/create_tables.rs src/migrator/data_transfer.rs src/migrator/verify.rs src/realtime/mod.rs src/realtime/binlog_reader.rs src/realtime/pg_writer.rs src/schema/mod.rs src/schema/dependency.rs src/schema/mysql_reader.rs src/schema/pg_converter.rs src/schema/types.rs
+
+src/main.rs:
+src/config.rs:
+src/migrator/mod.rs:
+src/migrator/create_tables.rs:
+src/migrator/data_transfer.rs:
+src/migrator/verify.rs:
+src/realtime/mod.rs:
+src/realtime/binlog_reader.rs:
+src/realtime/pg_writer.rs:
+src/schema/mod.rs:
+src/schema/dependency.rs:
+src/schema/mysql_reader.rs:
+src/schema/pg_converter.rs:
+src/schema/types.rs:

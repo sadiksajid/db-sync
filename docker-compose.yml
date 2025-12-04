@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mysql_psql_proxy
+    environment:
+      # Option 1: Use full connection URLs
+      # MYSQL_URL: mysql://mysql_user:mysql_password@mysql:3306/source_db
+      # PG_URL: postgres://postgres:postgrespassword@postgres:5432/target_db
+      
+      # Option 2: Use individual credential environment variables (MYSQL_* / POSTGRES_*)
+      # MYSQL_HOST: mysql
+      # MYSQL_PORT: 3306
+      # MYSQL_USER: mysql_user
+      # MYSQL_PASSWORD: mysql_password
+      # MYSQL_DATABASE: source_db
+      # POSTGRES_HOST: postgres
+      # POSTGRES_PORT: 5432
+      # POSTGRES_USER: postgres
+      # POSTGRES_PASSWORD: postgrespassword
+      # POSTGRES_DB: target_db
+      
+      # Option 3: Use DB_* for MySQL and PSQL_DB_* for PostgreSQL
+      # MySQL configuration
+      DB_HOST: 192.168.1.237
+      DB_PORT: 3306
+      DB_DATABASE: CODPARTNER_APP_TEST
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      
+      # PostgreSQL configuration
+      PSQL_DB_HOST: 192.168.1.237
+      PSQL_DB_PORT: 5432
+      PSQL_DB_DATABASE: CODPARTNER_APP_TEST
+      PSQL_DB_USERNAME: postgres
+      PSQL_DB_PASSWORD: postgres
+      
+      # Sync configuration
+      SYNC_MODE: both
+      BATCH_SIZE: 1000
+      RUST_LOG: info
+    command: ["--full-sync"]
+    restart: unless-stopped
+
