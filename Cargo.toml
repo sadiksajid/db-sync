@@ -11,6 +11,8 @@ serde_json = "1"
 petgraph = "0.6"
 anyhow = "1"
 thiserror = "1"
+regex = "1"
+reqwest = { version = "0.11", features = ["json"] }
 # mysql_binlog = "0.4"  # Optional: for real-time binlog streaming
 futures = "0.3"
 dotenvy = "0.15"

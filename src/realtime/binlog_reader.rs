@@ -32,14 +32,140 @@ pub struct BinlogReader {
 
 impl BinlogReader {
     pub fn new(mysql_pool: Pool<MySql>, database: String, event_tx: mpsc::Sender<BinlogEventType>) -> Result<Self> {
+        // Use 5 second interval to reduce load on general_log table
+        let poll_interval = std::env::var("POLL_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .map(Duration::from_secs)
+            .unwrap_or(Duration::from_secs(5)); // Default: 5 seconds (reduced from 1)
+        
         Ok(Self {
             mysql_pool,
             database,
             event_tx,
             last_check_time: SystemTime::now(),
             last_processed_event_time: None,
-            poll_interval: Duration::from_secs(1), // Poll every second
+            poll_interval,
         })
+    }
+
+    /// Run catch-up sync from a specific timestamp
+    /// Returns the number of changes found and applied
+    pub async fn catchup_from_timestamp(&mut self, start_timestamp: &str) -> Result<usize> {
+        info!("🔄 Running catch-up sync from timestamp: {}", start_timestamp);
+        
+        let query = format!(r#"
+            SELECT 
+                CAST(argument AS CHAR) as query,
+                CAST(event_time AS CHAR) as event_time
+            FROM mysql.general_log
+            WHERE 
+                command_type = 'Query'
+                AND (
+                    UPPER(CAST(argument AS CHAR)) LIKE 'INSERT%' OR
+                    UPPER(CAST(argument AS CHAR)) LIKE 'UPDATE%' OR
+                    UPPER(CAST(argument AS CHAR)) LIKE 'DELETE%'
+                )
+                AND event_time >= '{}'
+            ORDER BY event_time ASC
+            LIMIT 10000
+        "#, start_timestamp);
+
+        match sqlx::query(&query)
+            .fetch_all(&self.mysql_pool)
+            .await
+        {
+            Ok(rows) => {
+                let total_changes = rows.len();
+                
+                if total_changes == 0 {
+                    info!("✓ No changes detected during initial transfer");
+                    return Ok(0);
+                }
+                
+                info!("⚠️  Found {} changes that occurred during initial transfer", total_changes);
+                info!("Applying catch-up changes...");
+                
+                let mut applied = 0;
+                let mut latest_event_time: Option<String> = None;
+                
+                for (idx, row) in rows.iter().enumerate() {
+                    // Extract event_time
+                    let event_time_str: Option<String> = {
+                        if let Ok(et) = row.try_get::<String, _>(1) {
+                            Some(et)
+                        } else if let Ok(Some(et)) = row.try_get::<Option<String>, _>(1) {
+                            Some(et)
+                        } else if let Ok(et) = row.try_get::<String, _>("event_time") {
+                            Some(et)
+                        } else if let Ok(Some(et)) = row.try_get::<Option<String>, _>("event_time") {
+                            Some(et)
+                        } else {
+                            None
+                        }
+                    };
+                    
+                    if let Some(ref et) = event_time_str {
+                        let should_update = match &latest_event_time {
+                            None => true,
+                            Some(existing) => et > existing,
+                        };
+                        if should_update {
+                            latest_event_time = Some(et.clone());
+                        }
+                    }
+                    
+                    // Extract query text
+                    let query_text: Option<String> = {
+                        if let Ok(q) = row.try_get::<String, _>(0) {
+                            Some(q)
+                        } else if let Ok(Some(q)) = row.try_get::<Option<String>, _>(0) {
+                            Some(q)
+                        } else if let Ok(q) = row.try_get::<String, _>("query") {
+                            Some(q)
+                        } else if let Ok(Some(q)) = row.try_get::<Option<String>, _>("query") {
+                            Some(q)
+                        } else {
+                            if let Ok(bytes) = row.try_get::<Vec<u8>, _>(0) {
+                                String::from_utf8(bytes).ok()
+                            } else {
+                                None
+                            }
+                        }
+                    };
+                    
+                    if let Some(query) = query_text {
+                        let query_trimmed = query.trim();
+                        
+                        if query_trimmed.is_empty() {
+                            continue;
+                        }
+                        
+                        // Parse and send query to the channel
+                        if let Err(e) = self.parse_and_send_query(query_trimmed).await {
+                            warn!("Failed to parse catch-up query: {} - Error: {}", query_trimmed, e);
+                        } else {
+                            applied += 1;
+                            if (applied % 100) == 0 {
+                                info!("  Applied {}/{} catch-up changes...", applied, total_changes);
+                            }
+                        }
+                    }
+                }
+                
+                // Update last processed time
+                if let Some(last_time) = latest_event_time {
+                    self.last_processed_event_time = Some(last_time);
+                }
+                
+                info!("✓ Catch-up complete: applied {} changes out of {} found", applied, total_changes);
+                Ok(applied)
+            }
+            Err(e) => {
+                error!("Error querying general_log for catch-up: {}", e);
+                Err(anyhow::anyhow!("Catch-up query failed: {}", e))
+            }
+        }
     }
 
     pub async fn start_streaming(&mut self) -> Result<()> {
@@ -51,15 +177,33 @@ impl BinlogReader {
         // Note: This requires SUPER privilege
         self.enable_general_log().await?;
         
+        // Clean up old general_log entries to improve performance
+        info!("Cleaning up old general_log entries...");
+        if let Err(e) = self.cleanup_general_log().await {
+            warn!("Could not clean general_log: {}", e);
+        }
+        
         info!("Change monitoring started. Waiting for INSERT/UPDATE/DELETE operations...");
         info!("Make a change in MySQL to see it replicated to PostgreSQL");
         
         let mut iteration = 0;
+        let mut cleanup_counter = 0;
         loop {
             iteration += 1;
-            if iteration % 60 == 0 {
-                // Log every 60 iterations (every minute if polling every second)
+            cleanup_counter += 1;
+            
+            // Log status every 12 iterations (every minute with 5s interval)
+            if iteration % 12 == 0 {
                 info!("Change monitor is running... (iteration {})", iteration);
+            }
+            
+            // Cleanup general_log every 300 iterations (25 minutes with 5s interval)
+            if cleanup_counter >= 300 {
+                info!("Periodic cleanup of general_log...");
+                if let Err(e) = self.cleanup_general_log().await {
+                    warn!("Could not clean general_log: {}", e);
+                }
+                cleanup_counter = 0;
             }
             
             if let Err(e) = self.check_for_changes().await {
@@ -70,6 +214,29 @@ impl BinlogReader {
             // Note: last_check_time is updated inside check_for_changes()
             
             tokio::time::sleep(self.poll_interval).await;
+        }
+    }
+
+    async fn cleanup_general_log(&self) -> Result<()> {
+        // Delete entries older than 1 hour to keep the table small
+        let query = r#"
+            DELETE FROM mysql.general_log 
+            WHERE event_time < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            LIMIT 10000
+        "#;
+        
+        match sqlx::query(query).execute(&self.mysql_pool).await {
+            Ok(result) => {
+                let rows_deleted = result.rows_affected();
+                if rows_deleted > 0 {
+                    info!("✓ Cleaned {} old entries from general_log", rows_deleted);
+                }
+                Ok(())
+            }
+            Err(e) => {
+                debug!("Could not cleanup general_log: {}", e);
+                Ok(()) // Don't fail if cleanup doesn't work
+            }
         }
     }
 

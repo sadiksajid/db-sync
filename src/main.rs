@@ -1,3 +1,4 @@
+mod ai;
 mod config;
 mod migrator;
 mod realtime;
@@ -6,11 +7,10 @@ mod schema;
 use anyhow::Result;
 use clap::{Arg, Command};
 use config::{Config, SyncMode};
-use migrator::{create_tables::TableCreator, data_transfer::DataTransfer, verify::Verifier};
+use migrator::{create_tables::TableCreator, data_transfer::DataTransfer, routine_migrator::RoutineMigrator, verify::Verifier};
 use realtime::{binlog_reader::BinlogReader, pg_writer::PGWriter};
-use schema::mysql_reader::MySQLReader;
-use std::sync::mpsc;
-use tracing::{error, info};
+use schema::{mysql_reader::MySQLReader, routines::RoutineReader};
+use tracing::{error, info, warn};
 use tracing_subscriber;
 
 #[tokio::main]
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
 
     match sync_mode {
         SyncMode::Initial => {
-            run_initial_sync(&config).await.map_err(|e| {
+            let _ = run_initial_sync(&config).await.map_err(|e| {
                 eprintln!("Initial sync failed: {}", e);
                 e
             })?;
@@ -84,10 +84,25 @@ async fn main() -> Result<()> {
             })?;
         }
         SyncMode::Both => {
-            run_initial_sync(&config).await.map_err(|e| {
+            // Run initial sync and get the start timestamp
+            info!("=== Phase 1/3: Initial Sync ===");
+            let start_timestamp = run_initial_sync(&config).await.map_err(|e| {
                 eprintln!("Initial sync failed: {}", e);
                 e
             })?;
+            
+            // Run catch-up sync to apply changes that occurred during initial transfer
+            info!("=== Phase 2/3: Catch-Up Sync ===");
+            run_catchup_sync(&config, &start_timestamp).await.map_err(|e| {
+                eprintln!("Catch-up sync failed: {}", e);
+                e
+            })?;
+            
+            // Now start real-time sync
+            info!("=== Phase 3/3: Real-Time Sync ===");
+            info!("🚀 Starting real-time sync...");
+            info!("The application will now monitor MySQL for changes continuously.");
+            info!("Press Ctrl+C to stop.");
             run_realtime_sync(&config).await.map_err(|e| {
                 eprintln!("Real-time sync failed: {}", e);
                 e
@@ -99,13 +114,18 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_initial_sync(config: &Config) -> Result<()> {
+async fn run_initial_sync(config: &Config) -> Result<String> {
     info!("Starting initial sync (schema + data)");
 
     // Connect to MySQL
     info!("Connecting to MySQL: {}", config.mysql_url);
     let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
     info!("Connected to MySQL");
+    
+    // Record the start timestamp BEFORE we begin data transfer
+    info!("📍 Recording start timestamp for catch-up sync...");
+    let start_timestamp = get_mysql_timestamp(&mysql_pool).await?;
+    info!("📍 Start timestamp: {}", start_timestamp);
 
     // Connect to PostgreSQL
     info!("Connecting to PostgreSQL: {}", config.pg_url);
@@ -130,6 +150,27 @@ async fn run_initial_sync(config: &Config) -> Result<()> {
     data_transfer.transfer_all_data(&schema).await?;
     info!("Data transfer completed");
 
+    // Read and migrate database objects (views, functions, procedures, triggers)
+    info!("Reading database objects from MySQL...");
+    let routine_reader = RoutineReader::new(mysql_pool.clone(), config.mysql_database.clone());
+    
+    let views = routine_reader.read_views().await?;
+    let functions = routine_reader.read_functions().await?;
+    let procedures = routine_reader.read_procedures().await?;
+    let triggers = routine_reader.read_triggers().await?;
+
+    info!("Found {} views, {} functions, {} procedures, {} triggers", 
+        views.len(), functions.len(), procedures.len(), triggers.len());
+
+    if !views.is_empty() || !functions.is_empty() || !procedures.is_empty() || !triggers.is_empty() {
+        info!("Migrating database objects to PostgreSQL...");
+        let routine_migrator = RoutineMigrator::new(pg_pool.clone());
+        routine_migrator.migrate_all(&views, &functions, &procedures, &triggers).await?;
+        info!("Database objects migration completed");
+    } else {
+        info!("No database objects to migrate");
+    }
+
     // Verify
     info!("Verifying schema and data...");
     let verifier = Verifier::new(mysql_pool, pg_pool);
@@ -150,6 +191,112 @@ async fn run_initial_sync(config: &Config) -> Result<()> {
     }
 
     info!("Initial sync completed");
+    Ok(start_timestamp)
+}
+
+/// Get current MySQL timestamp for catch-up sync
+async fn get_mysql_timestamp(mysql_pool: &sqlx::MySqlPool) -> Result<String> {
+    let row: (String,) = sqlx::query_as("SELECT CAST(NOW(6) AS CHAR)")
+        .fetch_one(mysql_pool)
+        .await?;
+    Ok(row.0)
+}
+
+/// Run catch-up sync to replay changes that occurred during initial transfer
+/// Keeps checking and replaying until no more changes are found
+async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> {
+    info!("🔄 Starting catch-up sync to replay changes from initial transfer");
+    info!("📍 Catching up from timestamp: {}", start_timestamp);
+
+    // Connect to MySQL
+    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
+    
+    // Connect to PostgreSQL
+    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
+
+    // Create bounded channel for events
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
+
+    // Create binlog reader for catch-up
+    let mut binlog_reader = BinlogReader::new(
+        mysql_pool.clone(), 
+        config.mysql_database.clone(), 
+        event_tx.clone()
+    )?;
+
+    // Start PostgreSQL writer worker
+    let pg_pool_clone = pg_pool.clone();
+    let writer_handle = tokio::spawn(async move {
+        info!("[Catch-up Writer] Started, waiting for events...");
+        let pg_writer = PGWriter::new(pg_pool_clone);
+        let mut event_count = 0;
+        
+        while let Some(event) = event_rx.recv().await {
+            event_count += 1;
+            
+            if let Err(e) = pg_writer.handle_event(event).await {
+                error!("[Catch-up] Event #{} failed: {}", event_count, e);
+            }
+        }
+        
+        info!("[Catch-up Writer] Channel closed, processed {} total events", event_count);
+    });
+
+    // Keep running catch-up until no more changes are found
+    let mut iteration = 0;
+    let mut current_timestamp = start_timestamp.to_string();
+    
+    loop {
+        iteration += 1;
+        info!("🔄 Catch-up iteration #{}", iteration);
+        
+        // Get timestamp before this catch-up run
+        let before_catchup = get_mysql_timestamp(&mysql_pool).await?;
+        
+        // Run catch-up from current timestamp
+        let changes_found = binlog_reader.catchup_from_timestamp(&current_timestamp).await?;
+        
+        if changes_found == 0 {
+            // No changes found - we're synchronized!
+            info!("✓ Catch-up complete: databases are synchronized");
+            break;
+        }
+        
+        // Wait a moment for PostgreSQL writer to finish processing
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        
+        // Get timestamp after catch-up to check for new changes
+        let after_catchup = get_mysql_timestamp(&mysql_pool).await?;
+        
+        info!("⚠️  Found {} changes in iteration {}", changes_found, iteration);
+        info!("📍 Checking for additional changes from {} to {}", before_catchup, after_catchup);
+        
+        // Update current timestamp for next iteration
+        current_timestamp = before_catchup;
+        
+        // Safety: prevent infinite loop (max 10 iterations)
+        if iteration >= 10 {
+            warn!("⚠️  Reached maximum catch-up iterations (10). Proceeding to live sync.");
+            warn!("⚠️  There may still be pending changes - live sync will handle them.");
+            break;
+        }
+    }
+
+    // Close the channel and wait for writer to finish
+    info!("Closing catch-up event channel...");
+    drop(event_tx);
+    
+    info!("Waiting for PostgreSQL writer to finish processing...");
+    match tokio::time::timeout(tokio::time::Duration::from_secs(10), writer_handle).await {
+        Ok(_) => {
+            info!("✓ PostgreSQL writer finished successfully");
+        }
+        Err(_) => {
+            warn!("⚠️  PostgreSQL writer did not finish within 10 seconds, continuing anyway...");
+        }
+    }
+
+    info!("✓ Catch-up sync completed successfully");
     Ok(())
 }
 

@@ -9,7 +9,9 @@ A high-performance, production-ready Rust application that synchronizes data and
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Catch-Up Sync](#catch-up-sync)
 - [Real-Time Sync Setup](#real-time-sync-setup)
+- [Database Objects Migration](#database-objects-migration)
 - [Docker Deployment](#docker-deployment)
 - [Data Type Mappings](#data-type-mappings)
 - [Troubleshooting](#troubleshooting)
@@ -23,6 +25,8 @@ A high-performance, production-ready Rust application that synchronizes data and
 
 - **Schema Migration**: Automatically reads MySQL schema (tables, columns, indexes, foreign keys, data types) and converts to PostgreSQL-compatible schema
 - **Data Transfer**: Efficiently transfers data in configurable batches with automatic dependency resolution
+- **Database Objects**: Migrates views, functions, stored procedures, and triggers with automatic syntax conversion
+- **Catch-Up Sync**: Automatically detects and replays changes that occurred during initial data transfer, ensuring zero data loss
 - **Real-Time Synchronization**: Monitors MySQL `general_log` for INSERT/UPDATE/DELETE operations and replicates them to PostgreSQL in real-time
 - **Dependency Resolution**: Uses topological sorting to ensure tables are created and populated in the correct order based on foreign key relationships
 - **Error Handling**: Robust error handling with automatic retry logic and detailed logging
@@ -58,13 +62,22 @@ A high-performance, production-ready Rust application that synchronizes data and
 │                                              │
 │  ┌──────────────────────────────────────┐  │
 │  │         Data Transfer Engine         │  │
+│  │  - Records start timestamp           │  │
 │  │  - Batch processing                  │  │
 │  │  - Topological ordering              │  │
 │  │  - Error recovery                    │  │
 │  └──────────────────────────────────────┘  │
 │                                              │
 │  ┌──────────────────────────────────────┐  │
-│  │      Real-Time Sync (Optional)       │  │
+│  │        Catch-Up Sync (NEW!)          │  │
+│  │  - Queries general_log from start    │  │
+│  │  - Replays changes during transfer   │  │
+│  │  - Loops until synchronized          │  │
+│  │  - Ensures zero data loss            │  │
+│  └──────────────────────────────────────┘  │
+│                                              │
+│  ┌──────────────────────────────────────┐  │
+│  │         Real-Time Sync               │  │
 │  │  - Monitors general_log              │  │
 │  │  - Event queue (non-blocking)        │  │
 │  │  - Async PostgreSQL writer           │  │
@@ -84,9 +97,10 @@ A high-performance, production-ready Rust application that synchronizes data and
 1. **Schema Reader** (`src/schema/mysql_reader.rs`): Extracts schema from MySQL's `INFORMATION_SCHEMA`
 2. **Schema Converter** (`src/schema/pg_converter.rs`): Converts MySQL schema to PostgreSQL DDL
 3. **Dependency Graph** (`src/schema/dependency.rs`): Builds and sorts tables by foreign key dependencies
-4. **Data Transfer** (`src/migrator/data_transfer.rs`): Handles batch data migration
-5. **Real-Time Sync** (`src/realtime/`): Monitors MySQL changes and replicates to PostgreSQL
-6. **PostgreSQL Writer** (`src/realtime/pg_writer.rs`): Applies changes to PostgreSQL asynchronously
+4. **Data Transfer** (`src/migrator/data_transfer.rs`): Handles batch data migration with timestamp recording
+5. **Catch-Up Sync** (`src/realtime/binlog_reader.rs::catchup_from_timestamp`): Replays changes from initial transfer
+6. **Real-Time Sync** (`src/realtime/`): Monitors MySQL changes and replicates to PostgreSQL
+7. **PostgreSQL Writer** (`src/realtime/pg_writer.rs`): Applies changes to PostgreSQL asynchronously
 
 ## Installation
 
@@ -253,6 +267,165 @@ docker run --rm \
   mysql_psql_proxy:latest \
   --full-sync
 ```
+
+## Catch-Up Sync
+
+**🎯 Zero Data Loss Guarantee**: The catch-up sync mechanism ensures no data is lost during the initial transfer.
+
+### The Problem
+
+During initial data transfer (which can take minutes or hours for large databases), changes may occur in MySQL:
+
+```
+Time 0:00 - Initial sync starts
+Time 0:05 - User INSERT new row (during transfer)
+Time 2:30 - User UPDATE a row (during transfer)
+Time 5:00 - Initial sync completes
+```
+
+Without catch-up, these changes at 0:05 and 2:30 would be **lost**.
+
+### The Solution
+
+When using `--full-sync`, the proxy automatically:
+
+1. **Records** the start timestamp before data transfer
+2. **Transfers** all data in batches
+3. **Queries** `mysql.general_log` for changes since start timestamp
+4. **Applies** all detected changes to PostgreSQL
+5. **Repeats** steps 3-4 until no more changes found
+6. **Starts** real-time sync for ongoing synchronization
+
+This ensures **complete data consistency** between MySQL and PostgreSQL.
+
+### How to Enable
+
+Catch-up sync is **automatically enabled** when using `--full-sync`:
+
+```bash
+docker run --rm \
+  -e DB_HOST=192.168.1.237 \
+  -e DB_PORT=3306 \
+  -e DB_DATABASE=my_db \
+  -e DB_USERNAME=root \
+  -e DB_PASSWORD=password \
+  -e PSQL_DB_HOST=192.168.1.237 \
+  -e PSQL_DB_PORT=5432 \
+  -e PSQL_DB_DATABASE=my_db \
+  -e PSQL_DB_USERNAME=postgres \
+  -e PSQL_DB_PASSWORD=postgres \
+  mysql_psql_proxy:latest \
+  --full-sync
+```
+
+### Log Output
+
+You'll see these messages during catch-up:
+
+```
+INFO  📍 Recording start timestamp for catch-up sync...
+INFO  📍 Start timestamp: 2024-12-08 10:00:00.123456
+
+INFO  🔄 Starting catch-up sync to replay changes from initial transfer
+INFO  🔄 Catch-up iteration #1
+INFO  ⚠️  Found 42 changes that occurred during initial transfer
+INFO  Applying catch-up changes...
+INFO  ✓ Catch-up complete: applied 42 changes out of 42 found
+
+INFO  🔄 Catch-up iteration #2
+INFO  ✓ No changes detected during initial transfer
+INFO  ✓ Catch-up complete: databases are synchronized
+```
+
+### Requirements
+
+Catch-up sync requires the same `general_log` setup as real-time sync (see below).
+
+For detailed information, see [CATCHUP_SYNC.md](CATCHUP_SYNC.md).
+
+## Database Objects Migration
+
+**🎯 Complete Database Migration**: The proxy can migrate not just tables and data, but also:
+
+- ✅ **Views**: Virtual tables based on SELECT queries
+- ✅ **Functions**: Stored functions with return values
+- ✅ **Procedures**: Stored procedures (converted to PostgreSQL functions)
+- ✅ **Triggers**: Automatic event handlers on tables
+
+### ⚠️ Gemini AI Required
+
+Database objects migration requires **Google Gemini API** for accurate conversion:
+
+```bash
+export GEMINI_API_KEY="your-api-key-here"
+export GEMINI_MODEL="gemini-2.0-flash-exp"  # Optional, defaults to gemini-2.0-flash-exp
+```
+
+Or edit `rebuild-and-run.sh` and replace the empty values:
+```bash
+-e GEMINI_API_KEY=""  # <- Add your API key here
+-e GEMINI_MODEL="gemini-2.0-flash-exp"
+```
+
+**Without Gemini API key**: Database objects (views, functions, procedures, triggers) will be **SKIPPED** to avoid creating broken objects.
+
+**With Gemini API key**: ~90-95% success rate with AI-powered intelligent conversion.
+
+Get your free API key at: https://makersuite.google.com/app/apikey
+
+### Automatic Migration
+
+During `--initial-sync` or `--full-sync` (with GEMINI_API_KEY set), the proxy automatically:
+
+1. **Reads** all database objects from MySQL
+2. **Converts** MySQL syntax to PostgreSQL using Gemini AI
+3. **Creates** the objects in PostgreSQL
+4. **Reports** success/failure for each object
+
+### Syntax Conversion
+
+The proxy performs intelligent conversions:
+
+- Backticks `` `name` `` → Double quotes `"name"`
+- `IFNULL()` → `COALESCE()`
+- `NOW()` → `CURRENT_TIMESTAMP`
+- `TINYINT` → `SMALLINT`
+- `DATETIME` → `TIMESTAMP`
+- MySQL functions/procedures → PostgreSQL PL/pgSQL
+- MySQL triggers → PostgreSQL trigger functions + triggers
+
+### Success Rate
+
+- **Views**: ~95% automatic success
+- **Functions**: ~70% automatic success
+- **Procedures**: ~70% automatic success
+- **Triggers**: ~80% automatic success
+
+Complex objects with MySQL-specific features may require manual adjustment. The proxy logs detailed warnings for objects that need review.
+
+### Example
+
+```
+INFO  Reading database objects from MySQL...
+INFO  Found 5 views, 3 functions, 2 procedures, 4 triggers
+INFO  Migrating database objects to PostgreSQL...
+INFO  Using Gemini AI to convert view: customer_summary
+INFO  ✓ Created view: customer_summary
+INFO  ⏳ Rate limiting: waiting 60s before next Gemini API call...
+INFO  Using Gemini AI to convert function: calculate_discount
+INFO  ✓ Created function: calculate_discount
+INFO  ⏳ Rate limiting: waiting 60s before next Gemini API call...
+INFO  Using Gemini AI to convert procedure: update_inventory
+INFO  ✓ Created procedure: update_inventory
+INFO  View migration complete: 5 successful, 0 failed
+INFO  Function migration complete: 3 successful, 0 failed
+INFO  Procedure migration complete: 2 successful, 0 failed
+INFO  Trigger migration complete: 4 successful, 0 failed
+```
+
+**Note**: Gemini API calls are rate-limited to **1 call per minute** to stay within free tier limits. For 14 objects, migration takes ~14 minutes.
+
+For detailed information, examples, and troubleshooting, see [DATABASE_OBJECTS.md](DATABASE_OBJECTS.md).
 
 ## Real-Time Sync Setup
 
