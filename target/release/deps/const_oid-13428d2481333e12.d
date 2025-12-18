@@ -1,0 +1,11 @@
+/home/seddek/Projects/mysql to psql proxy/target/release/deps/const_oid-13428d2481333e12.d: /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md
+
+/home/seddek/Projects/mysql to psql proxy/target/release/deps/libconst_oid-13428d2481333e12.rmeta: /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs /home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md
+
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs:
+/home/seddek/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md:

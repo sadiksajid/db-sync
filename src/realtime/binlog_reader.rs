@@ -54,6 +54,7 @@ impl BinlogReader {
     pub async fn catchup_from_timestamp(&mut self, start_timestamp: &str) -> Result<usize> {
         info!("🔄 Running catch-up sync from timestamp: {}", start_timestamp);
         
+        // Optimized query: removed UPPER() calls for better performance
         let query = format!(r#"
             SELECT 
                 CAST(argument AS CHAR) as query,
@@ -61,12 +62,12 @@ impl BinlogReader {
             FROM mysql.general_log
             WHERE 
                 command_type = 'Query'
-                AND (
-                    UPPER(CAST(argument AS CHAR)) LIKE 'INSERT%' OR
-                    UPPER(CAST(argument AS CHAR)) LIKE 'UPDATE%' OR
-                    UPPER(CAST(argument AS CHAR)) LIKE 'DELETE%'
-                )
                 AND event_time >= '{}'
+                AND (
+                    argument LIKE 'INSERT%' OR argument LIKE 'insert%' OR
+                    argument LIKE 'UPDATE%' OR argument LIKE 'update%' OR
+                    argument LIKE 'DELETE%' OR argument LIKE 'delete%'
+                )
             ORDER BY event_time ASC
             LIMIT 10000
         "#, start_timestamp);
@@ -177,10 +178,14 @@ impl BinlogReader {
         // Note: This requires SUPER privilege
         self.enable_general_log().await?;
         
-        // Clean up old general_log entries to improve performance
-        info!("Cleaning up old general_log entries...");
-        if let Err(e) = self.cleanup_general_log().await {
-            warn!("Could not clean general_log: {}", e);
+        // Truncate general_log completely to start fresh (no old data needed)
+        info!("Truncating general_log to start fresh...");
+        if let Err(e) = self.truncate_general_log().await {
+            warn!("Could not truncate general_log: {}", e);
+            // Fallback to cleanup
+            if let Err(e) = self.cleanup_general_log().await {
+                warn!("Could not clean general_log: {}", e);
+            }
         }
         
         info!("Change monitoring started. Waiting for INSERT/UPDATE/DELETE operations...");
@@ -214,6 +219,38 @@ impl BinlogReader {
             // Note: last_check_time is updated inside check_for_changes()
             
             tokio::time::sleep(self.poll_interval).await;
+        }
+    }
+
+    async fn truncate_general_log(&self) -> Result<()> {
+        // Truncate the entire general_log table for a fresh start
+        info!("Attempting to truncate mysql.general_log...");
+        
+        match sqlx::query("TRUNCATE TABLE mysql.general_log")
+            .execute(&self.mysql_pool)
+            .await
+        {
+            Ok(_) => {
+                info!("✓ Successfully truncated general_log");
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Could not truncate general_log: {}. Will try delete instead.", e);
+                // Fallback: delete all entries (slower but doesn't require TRUNCATE privilege)
+                match sqlx::query("DELETE FROM mysql.general_log WHERE 1=1 LIMIT 100000")
+                    .execute(&self.mysql_pool)
+                    .await
+                {
+                    Ok(result) => {
+                        let rows_deleted = result.rows_affected();
+                        info!("✓ Deleted {} entries from general_log", rows_deleted);
+                        Ok(())
+                    }
+                    Err(e2) => {
+                        Err(anyhow::anyhow!("Failed to truncate or delete general_log: {} / {}", e, e2))
+                    }
+                }
+            }
         }
     }
 
@@ -307,14 +344,14 @@ impl BinlogReader {
                 FROM mysql.general_log
                 WHERE 
                     command_type = 'Query'
-                    AND (
-                        UPPER(CAST(argument AS CHAR)) LIKE 'INSERT%' OR
-                        UPPER(CAST(argument AS CHAR)) LIKE 'UPDATE%' OR
-                        UPPER(CAST(argument AS CHAR)) LIKE 'DELETE%'
-                    )
                     AND event_time > '{}'
+                    AND (
+                        argument LIKE 'INSERT%' OR argument LIKE 'insert%' OR
+                        argument LIKE 'UPDATE%' OR argument LIKE 'update%' OR
+                        argument LIKE 'DELETE%' OR argument LIKE 'delete%'
+                    )
                 ORDER BY event_time ASC
-                LIMIT 100
+                LIMIT 50
             "#, last_time)
         } else {
             // First run - use timestamp with buffer
@@ -333,14 +370,14 @@ impl BinlogReader {
                 FROM mysql.general_log
                 WHERE 
                     command_type = 'Query'
-                    AND (
-                        UPPER(CAST(argument AS CHAR)) LIKE 'INSERT%' OR
-                        UPPER(CAST(argument AS CHAR)) LIKE 'UPDATE%' OR
-                        UPPER(CAST(argument AS CHAR)) LIKE 'DELETE%'
-                    )
                     AND event_time >= FROM_UNIXTIME({})
+                    AND (
+                        argument LIKE 'INSERT%' OR argument LIKE 'insert%' OR
+                        argument LIKE 'UPDATE%' OR argument LIKE 'update%' OR
+                        argument LIKE 'DELETE%' OR argument LIKE 'delete%'
+                    )
                 ORDER BY event_time ASC
-                LIMIT 100
+                LIMIT 50
             "#, timestamp)
         };
 

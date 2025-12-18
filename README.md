@@ -5,6 +5,7 @@ A high-performance, production-ready Rust application that synchronizes data and
 ## Table of Contents
 
 - [Features](#features)
+- [Statistics & Migration Planning](#-statistics--migration-planning)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -39,6 +40,28 @@ A high-performance, production-ready Rust application that synchronizes data and
 - **Batch Processing**: Configurable batch size for optimal performance
 - **Connection Pooling**: Uses connection pools for both MySQL and PostgreSQL for better performance
 - **Comprehensive Logging**: Structured logging with configurable log levels
+- **📊 Statistics Tracking**: Automatic operation logging to identify optimal migration windows (see [STATISTICS.md](STATISTICS.md))
+
+## 📊 Statistics & Migration Planning
+
+The proxy includes built-in statistics tracking to help you identify the **best time to migrate** with minimal impact on your users:
+
+**✅ Automatic Tracking**: Logs all INSERT/UPDATE/DELETE operations during real-time sync  
+**✅ Hourly Summaries**: Console displays stats every 5 minutes  
+**✅ JSON Export**: Complete log saved to `sync_operations_stats.json`  
+**✅ Best Window**: Automatically recommends the quietest hour for migration  
+
+**Example Output:**
+```
+📊 2025-12-09 08:00:00 - 245 inserts, 120 updates, 15 deletes (total: 380)
+📊 2025-12-09 12:00:00 - 56 inserts, 22 updates, 2 deletes (total: 80)
+📊 💡 BEST TIME TO SWITCH: 2025-12-09 12:00:00 (only 80 operations)
+```
+
+**📖 See [STATISTICS.md](STATISTICS.md) for the complete guide including:**
+- How to use statistics for migration planning
+- How to visualize data with charts
+- Best practices for minimizing downtime
 
 ## Architecture
 

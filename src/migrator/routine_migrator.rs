@@ -72,10 +72,35 @@ impl RoutineMigrator {
                         }
                     }
                 }
-                Err(e) => {
+            Err(e) => {
+                // Check if quota exceeded - fallback to regex converter
+                if e.to_string().contains("QUOTA_EXCEEDED") {
+                    warn!("⚠️  Gemini quota exceeded, falling back to regex converter for view: {}", view.name);
+                    
+                    // Try regex-based conversion
+                    match RoutineConverter::convert_view(view) {
+                        Ok(pg_sql) => {
+                            match sqlx::query(&pg_sql).execute(&self.pg_pool).await {
+                                Ok(_) => {
+                                    info!("✓ Created view (using regex): {}", view.name);
+                                    successful += 1;
+                                }
+                                Err(create_err) => {
+                                    error!("✗ Failed to create view {} (regex fallback): {}", view.name, create_err);
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        Err(conv_err) => {
+                            error!("✗ Failed to convert view {} (regex fallback also failed): {}", view.name, conv_err);
+                            failed += 1;
+                        }
+                    }
+                } else {
                     error!("✗ Failed to convert view {}: {}", view.name, e);
                     failed += 1;
                 }
+            }
             }
         }
 
@@ -130,10 +155,35 @@ impl RoutineMigrator {
                         }
                     }
                 }
-                Err(e) => {
+            Err(e) => {
+                // Check if quota exceeded - fallback to regex converter
+                if e.to_string().contains("QUOTA_EXCEEDED") {
+                    warn!("⚠️  Gemini quota exceeded, falling back to regex converter for function: {}", func.name);
+                    
+                    // Try regex-based conversion
+                    match RoutineConverter::convert_function(func) {
+                        Ok(pg_sql) => {
+                            match sqlx::query(&pg_sql).execute(&self.pg_pool).await {
+                                Ok(_) => {
+                                    info!("✓ Created function (using regex): {}", func.name);
+                                    successful += 1;
+                                }
+                                Err(create_err) => {
+                                    error!("✗ Failed to create function {} (regex fallback): {}", func.name, create_err);
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        Err(conv_err) => {
+                            error!("✗ Failed to convert function {} (regex fallback also failed): {}", func.name, conv_err);
+                            failed += 1;
+                        }
+                    }
+                } else {
                     error!("✗ Failed to convert function {}: {}", func.name, e);
                     failed += 1;
                 }
+            }
             }
         }
 
@@ -193,10 +243,35 @@ impl RoutineMigrator {
                         }
                     }
                 }
-                Err(e) => {
+            Err(e) => {
+                // Check if quota exceeded - fallback to regex converter
+                if e.to_string().contains("QUOTA_EXCEEDED") {
+                    warn!("⚠️  Gemini quota exceeded, falling back to regex converter for procedure: {}", proc.name);
+                    
+                    // Try regex-based conversion
+                    match RoutineConverter::convert_procedure(proc) {
+                        Ok(pg_sql) => {
+                            match sqlx::query(&pg_sql).execute(&self.pg_pool).await {
+                                Ok(_) => {
+                                    info!("✓ Created procedure (using regex): {}", proc.name);
+                                    successful += 1;
+                                }
+                                Err(create_err) => {
+                                    error!("✗ Failed to create procedure {} (regex fallback): {}", proc.name, create_err);
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        Err(conv_err) => {
+                            error!("✗ Failed to convert procedure {} (regex fallback also failed): {}", proc.name, conv_err);
+                            failed += 1;
+                        }
+                    }
+                } else {
                     error!("✗ Failed to convert procedure {}: {}", proc.name, e);
                     failed += 1;
                 }
+            }
             }
         }
 
@@ -271,10 +346,36 @@ impl RoutineMigrator {
                         successful += 1;
                     }
                 }
-                Err(e) => {
+            Err(e) => {
+                // Check if quota exceeded - fallback to regex converter
+                if e.to_string().contains("QUOTA_EXCEEDED") {
+                    warn!("⚠️  Gemini quota exceeded, falling back to regex converter for trigger: {}", trigger.name);
+                    
+                    // Try regex-based conversion
+                    match RoutineConverter::convert_trigger(trigger) {
+                        Ok(pg_sql) => {
+                            // Execute the converted SQL
+                            match sqlx::query(&pg_sql).execute(&self.pg_pool).await {
+                                Ok(_) => {
+                                    info!("✓ Created trigger (using regex): {}", trigger.name);
+                                    successful += 1;
+                                }
+                                Err(create_err) => {
+                                    error!("✗ Failed to create trigger {} (regex fallback): {}", trigger.name, create_err);
+                                    failed += 1;
+                                }
+                            }
+                        }
+                        Err(conv_err) => {
+                            error!("✗ Failed to convert trigger {} (regex fallback also failed): {}", trigger.name, conv_err);
+                            failed += 1;
+                        }
+                    }
+                } else {
                     error!("✗ Failed to convert trigger {}: {}", trigger.name, e);
                     failed += 1;
                 }
+            }
             }
         }
 

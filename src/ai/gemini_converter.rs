@@ -326,10 +326,9 @@ Output ONLY the PostgreSQL trigger function and trigger statements, nothing else
 
             let status = response.status();
 
-            // Update last call time after successful call
-            *last_call = Some(Instant::now());
-
             if status.is_success() {
+                // Update last call time after successful call
+                *last_call = Some(Instant::now());
                 let gemini_response: GeminiResponse = response.json().await?;
 
                 if gemini_response.candidates.is_empty() {
@@ -353,10 +352,18 @@ Output ONLY the PostgreSQL trigger function and trigger statements, nothing else
 
                 debug!("Gemini API response received ({} chars)", cleaned.len());
                 return Ok(cleaned);
+            } else if status == 429 {
+                // Quota exceeded - don't retry, fail immediately
+                let error_text = response.text().await?;
+                warn!("⚠️  Gemini API quota exceeded: {}", error_text);
+                return Err(anyhow::anyhow!("QUOTA_EXCEEDED: {}", error_text));
             } else if status == 503 {
                 // Service unavailable / model overloaded - retry
                 let error_text = response.text().await?;
                 last_error = Some(format!("{} - {}", status, error_text));
+                
+                // Update last call time to prevent rapid retries
+                *last_call = Some(Instant::now());
                 
                 if attempt < max_retries {
                     let retry_delay = Duration::from_secs(10 * attempt as u64); // 10s, 20s, 30s

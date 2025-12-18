@@ -1,0 +1,45 @@
+🔄 Starting real-time synchronization...
+📊 Statistics logging enabled: sync_operations_stats.json
+📊 No operations recorded yet
+MySQL variable general_log = ON
+Change monitoring started. Waiting for INSERT/UPDATE/DELETE operations...
+
+[Queue] Processing event #1: INSERT: table=orders, 2 columns
+[Queue] ✓ Event #1 processed successfully
+
+[Queue] Processing event #2: UPDATE: table=customers, 3 columns
+[Queue] ✓ Event #2 processed successfully
+
+[Queue] Processing event #3: DELETE: table=products, 1 columns
+[Queue] ✓ Event #3 processed successfully
+
+📊 2025-12-09 14:00:00 - 15 inserts, 8 updates, 2 deletes (total: 25)
+
+[Queue] Processing event #4: INSERT: table=orders, 2 columns
+[Queue] ✓ Event #4 processed successfully
+
+... (5 minutes later) ...
+
+📊 2025-12-09 14:05:00 - 23 inserts, 12 updates, 3 deletes (total: 38)
+
+... (5 minutes later) ...
+
+📊 2025-12-09 14:10:00 - 45 inserts, 23 updates, 5 deletes (total: 73)
+
+^C (User pressed Ctrl+C)
+
+📊 Flushing final statistics...
+📊 ═══════════════════════════════════════════════════════════════
+📊 HOURLY OPERATION STATISTICS
+📊 ═══════════════════════════════════════════════════════════════
+📊 2025-12-09 08:00:00 - 245 inserts, 120 updates, 15 deletes (total: 380)
+📊 2025-12-09 09:00:00 - 189 inserts, 95 updates, 8 deletes (total: 292)
+📊 2025-12-09 10:00:00 - 450 inserts, 230 updates, 25 deletes (total: 705)
+📊 2025-12-09 11:00:00 - 89 inserts, 45 updates, 3 deletes (total: 137)
+📊 2025-12-09 12:00:00 - 56 inserts, 22 updates, 2 deletes (total: 80)
+📊 2025-12-09 13:00:00 - 178 inserts, 67 updates, 12 deletes (total: 257)
+📊 2025-12-09 14:00:00 - 83 inserts, 43 updates, 10 deletes (total: 136)
+📊 ═══════════════════════════════════════════════════════════════
+📊 💡 BEST TIME TO SWITCH: 2025-12-09 12:00:00 (only 80 operations)
+📊 ═══════════════════════════════════════════════════════════════
+Real-time sync stopped

@@ -25,9 +25,9 @@ if [ $? -eq 0 ]; then
       -e PSQL_DB_DATABASE=testing \
       -e PSQL_DB_USERNAME=postgres \
       -e PSQL_DB_PASSWORD=postgres \
-      -e GEMINI_API_KEY="AIzaSyDW2LpHqb0HgxVGIQg7SLGfZw3Pxe_srEU" \
-      -e GEMINI_MODEL="gemini-2.5-flash" \
-      -e POLL_INTERVAL_SECS=5 \
+        -e GEMINI_API_KEY="" \
+        -e GEMINI_MODEL="gemini-2.0-flash-exp" \
+        -e POLL_INTERVAL_SECS=10 \
       -e BATCH_SIZE=200 \
       -e RUST_LOG=info \
       mysql_psql_proxy:latest \
