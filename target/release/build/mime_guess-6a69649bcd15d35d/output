@@ -1,1 +1,0 @@
-cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/home/seddek/Projects/mysql to psql proxy/target/release/build/mime_guess-6a69649bcd15d35d/out/mime_types_generated.rs
