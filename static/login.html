@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - MySQL to PostgreSQL Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'surface-0': '#121212',
+                        'surface-10': '#282828',
+                        'surface-20': '#3f3f3f',
+                        'surface-30': '#575757',
+                        'primary-0': '#1fd272',
+                        'primary-10': '#4ed882',
+                        'primary-20': '#6cdd91',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #121212 0%, #282828 100%);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full">
+        <!-- Login Card -->
+        <div class="bg-surface-10 rounded-3xl p-8 shadow-2xl border border-primary-0/20">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-primary-0/20 rounded-2xl mb-4">
+                    <span class="iconify text-primary-0" data-icon="solar:database-bold" data-width="32"></span>
+                </div>
+                <h1 class="text-3xl font-bold text-primary-0 mb-2">MySQL to PostgreSQL Sync</h1>
+                <p class="text-gray-400">Sign in to access the control panel</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="error-message" class="hidden bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-6">
+                <div class="flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:danger-circle-bold" data-width="20"></span>
+                    <span id="error-text"></span>
+                </div>
+            </div>
+
+            <!-- Success Message -->
+            <div id="success-message" class="hidden bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl mb-6">
+                <div class="flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span>
+                    <span id="success-text"></span>
+                </div>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="space-y-6">
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Email</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        required
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="your@email.com"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        required
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="••••••••"
+                    >
+                </div>
+
+                <button 
+                    type="submit"
+                    class="w-full px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300 flex items-center justify-center gap-2"
+                >
+                    <span class="iconify" data-icon="solar:login-3-bold" data-width="20"></span>
+                    Sign In
+                </button>
+            </form>
+        </div>
+
+        <p class="text-center text-gray-500 text-sm mt-6">
+            © 2024 MySQL to PostgreSQL Sync
+        </p>
+    </div>
+
+    <!-- First Time Setup Modal -->
+    <div id="setup-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-surface-10 rounded-3xl p-8 shadow-2xl border border-primary-0/30 max-w-md w-full">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-primary-0/20 rounded-2xl mb-4">
+                    <span class="iconify text-primary-0" data-icon="solar:user-plus-bold" data-width="32"></span>
+                </div>
+                <h2 class="text-2xl font-bold text-primary-0 mb-2">Welcome!</h2>
+                <p class="text-gray-400">Create your first admin account to get started</p>
+            </div>
+
+            <!-- Setup Form -->
+            <form id="setup-form" class="space-y-6">
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Email</label>
+                    <input 
+                        type="email" 
+                        id="setup-email" 
+                        required
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="admin@example.com"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Password</label>
+                    <input 
+                        type="password" 
+                        id="setup-password" 
+                        required
+                        minlength="6"
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="Minimum 6 characters"
+                    >
+                    <p class="text-gray-500 text-xs mt-2">Password must be at least 6 characters long</p>
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Confirm Password</label>
+                    <input 
+                        type="password" 
+                        id="setup-confirm-password" 
+                        required
+                        minlength="6"
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="Re-enter your password"
+                    >
+                    <p id="password-match-message-login" class="text-xs mt-2 hidden"></p>
+                </div>
+
+                <button 
+                    type="submit"
+                    class="w-full px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300 flex items-center justify-center gap-2"
+                >
+                    <span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span>
+                    Create Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Check if this is first run
+        async function checkFirstRun() {
+            try {
+                const response = await fetch('/api/auth/has-users');
+                const data = await response.json();
+                
+                if (data.success && !data.data) {
+                    // No users exist, show setup modal
+                    document.getElementById('setup-modal').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error checking first run:', error);
+            }
+        }
+
+        // Password match validation (login page)
+        function validatePasswordsLogin() {
+            const password = document.getElementById('setup-password').value;
+            const confirmPassword = document.getElementById('setup-confirm-password').value;
+            const message = document.getElementById('password-match-message-login');
+            
+            if (confirmPassword.length === 0) {
+                message.classList.add('hidden');
+                return null;
+            }
+            
+            if (password === confirmPassword) {
+                message.textContent = '✓ Passwords match';
+                message.className = 'text-green-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return true;
+            } else {
+                message.textContent = '✗ Passwords do not match';
+                message.className = 'text-red-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        // Add real-time password validation
+        document.getElementById('setup-password').addEventListener('input', validatePasswordsLogin);
+        document.getElementById('setup-confirm-password').addEventListener('input', validatePasswordsLogin);
+
+        // Setup form submission
+        document.getElementById('setup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('setup-email').value;
+            const password = document.getElementById('setup-password').value;
+            const confirmPassword = document.getElementById('setup-confirm-password').value;
+            
+            // Validate passwords match
+            if (password !== confirmPassword) {
+                showError('Passwords do not match');
+                return;
+            }
+            
+            // Validate password length
+            if (password.length < 6) {
+                showError('Password must be at least 6 characters long');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Hide modal
+                    document.getElementById('setup-modal').classList.add('hidden');
+                    // Show success message
+                    showSuccess('Account created successfully! Please sign in.');
+                } else {
+                    showError(data.message || 'Failed to create account');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        });
+
+        // Login form submission
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            hideMessages();
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('Login successful! Redirecting...');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    showError(data.message || 'Login failed');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            errorText.textContent = message;
+            errorDiv.classList.remove('hidden');
+            document.getElementById('success-message').classList.add('hidden');
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            const successText = document.getElementById('success-text');
+            successText.textContent = message;
+            successDiv.classList.remove('hidden');
+            document.getElementById('error-message').classList.add('hidden');
+        }
+
+        function hideMessages() {
+            document.getElementById('error-message').classList.add('hidden');
+            document.getElementById('success-message').classList.add('hidden');
+        }
+
+        // Check on page load
+        checkFirstRun();
+    </script>
+</body>
+</html>
+

@@ -193,9 +193,27 @@ impl BinlogReader {
         
         let mut iteration = 0;
         let mut cleanup_counter = 0;
+        
+        // Do first check immediately to establish baseline
+        if let Err(e) = self.check_for_changes().await {
+            error!("Error in initial change check: {}", e);
+            self.last_check_time = SystemTime::now();
+        }
+        
+        // Short delay before first real check to allow immediate operations to be logged
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        
         loop {
             iteration += 1;
             cleanup_counter += 1;
+            
+            // Check for changes first
+            if let Err(e) = self.check_for_changes().await {
+                error!("Error checking for changes: {}", e);
+                // Still update timestamp to avoid getting stuck
+                self.last_check_time = SystemTime::now();
+            }
+            // Note: last_check_time is updated inside check_for_changes()
             
             // Log status every 12 iterations (every minute with 5s interval)
             if iteration % 12 == 0 {
@@ -211,13 +229,7 @@ impl BinlogReader {
                 cleanup_counter = 0;
             }
             
-            if let Err(e) = self.check_for_changes().await {
-                error!("Error checking for changes: {}", e);
-                // Still update timestamp to avoid getting stuck
-                self.last_check_time = SystemTime::now();
-            }
-            // Note: last_check_time is updated inside check_for_changes()
-            
+            // Wait before next check
             tokio::time::sleep(self.poll_interval).await;
         }
     }

@@ -1,781 +1,450 @@
-# MySQL to PostgreSQL Proxy
+# MySQL to PostgreSQL Sync Proxy
 
-A high-performance, production-ready Rust application that synchronizes data and schema from MySQL to PostgreSQL in real-time. This proxy supports both initial bulk migration and continuous real-time synchronization.
+A powerful, real-time database synchronization tool that migrates and continuously syncs data from MySQL to PostgreSQL. Built with Rust for high performance and reliability.
 
-## Table of Contents
+## 🚀 Features
 
-- [Features](#features)
-- [Statistics & Migration Planning](#-statistics--migration-planning)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Catch-Up Sync](#catch-up-sync)
-- [Real-Time Sync Setup](#real-time-sync-setup)
-- [Database Objects Migration](#database-objects-migration)
-- [Docker Deployment](#docker-deployment)
-- [Data Type Mappings](#data-type-mappings)
-- [Troubleshooting](#troubleshooting)
-- [Limitations](#limitations)
-- [Performance](#performance)
-- [Contributing](#contributing)
+### Core Synchronization
+- **Schema Migration**: Automatic conversion of MySQL schemas to PostgreSQL-compatible structures
+- **Initial Data Transfer**: Bulk transfer of existing data with configurable batch sizes
+- **Real-time Sync**: Continuous monitoring and replication of INSERT, UPDATE, DELETE operations
+- **Catch-up Sync**: Ensures no data is lost during initial migration by replaying changes
+- **Three Sync Modes**: Choose between Full Sync, Initial Sync Only, or Real-time Sync Only
 
-## Features
+### Database Objects Migration
+- **Views**: Migrates MySQL views to PostgreSQL
+- **Functions**: Converts MySQL stored functions to PostgreSQL equivalents
+- **Procedures**: Migrates stored procedures with parameter mapping
+- **Triggers**: Converts MySQL triggers to PostgreSQL trigger functions
+- **AI-Powered Conversion**: Optional Gemini AI integration for intelligent SQL conversion
 
-### Core Capabilities
+### Web UI
+- **Modern Dashboard**: Intuitive web interface for configuration and monitoring
+- **Live Statistics**: Real-time operation tracking with hourly analytics
+- **Interactive Charts**: Beautiful line graphs showing sync operations over time
+- **User Authentication**: Secure login system with session management
+- **Persistent Configuration**: All settings saved in SQLite database
 
-- **Schema Migration**: Automatically reads MySQL schema (tables, columns, indexes, foreign keys, data types) and converts to PostgreSQL-compatible schema
-- **Data Transfer**: Efficiently transfers data in configurable batches with automatic dependency resolution
-- **Database Objects**: Migrates views, functions, stored procedures, and triggers with automatic syntax conversion
-- **Catch-Up Sync**: Automatically detects and replays changes that occurred during initial data transfer, ensuring zero data loss
-- **Real-Time Synchronization**: Monitors MySQL `general_log` for INSERT/UPDATE/DELETE operations and replicates them to PostgreSQL in real-time
-- **Dependency Resolution**: Uses topological sorting to ensure tables are created and populated in the correct order based on foreign key relationships
-- **Error Handling**: Robust error handling with automatic retry logic and detailed logging
-- **Non-Blocking Queue**: Asynchronous job queue system prevents listener blocking on slow PostgreSQL operations
+### Monitoring & Analytics
+- **Operation Statistics**: Track INSERT, UPDATE, DELETE counts by hour
+- **Success/Failure Tracking**: Monitor operation success rates
+- **Live Logs**: Real-time logging of all sync activities
+- **SQLite Storage**: Persistent statistics with queryable data
 
-### Advanced Features
+## 📋 Requirements
 
-- **Type Conversion**: Automatic conversion of MySQL-specific types to PostgreSQL equivalents (e.g., `AUTO_INCREMENT` → `SERIAL`/`IDENTITY`)
-- **Invalid Date Handling**: Automatically handles MySQL's invalid dates (`0000-00-00`) by converting to NULL
-- **Batch Processing**: Configurable batch size for optimal performance
-- **Connection Pooling**: Uses connection pools for both MySQL and PostgreSQL for better performance
-- **Comprehensive Logging**: Structured logging with configurable log levels
-- **📊 Statistics Tracking**: Automatic operation logging to identify optimal migration windows (see [STATISTICS.md](STATISTICS.md))
+### MySQL Database
+- MySQL 5.7+ or MariaDB 10.2+
+- `general_log` must be enabled (tool enables it automatically if you have SUPER privilege)
+- User with permissions:
+  - `SELECT` on source database
+  - `SELECT` on `mysql.general_log`
+  - `SUPER` privilege (for enabling general_log)
 
-## 📊 Statistics & Migration Planning
+### PostgreSQL Database
+- PostgreSQL 10+
+- User with permissions:
+  - `CREATE` tables and schemas
+  - `INSERT`, `UPDATE`, `DELETE` on target database
 
-The proxy includes built-in statistics tracking to help you identify the **best time to migrate** with minimal impact on your users:
+### System Requirements
+- Docker (recommended) or Rust 1.70+
+- 512MB RAM minimum (1GB+ recommended)
+- Network access between source MySQL and target PostgreSQL
 
-**✅ Automatic Tracking**: Logs all INSERT/UPDATE/DELETE operations during real-time sync  
-**✅ Hourly Summaries**: Console displays stats every 5 minutes  
-**✅ JSON Export**: Complete log saved to `sync_operations_stats.json`  
-**✅ Best Window**: Automatically recommends the quietest hour for migration  
+## 🔧 Installation
 
-**Example Output:**
-```
-📊 2025-12-09 08:00:00 - 245 inserts, 120 updates, 15 deletes (total: 380)
-📊 2025-12-09 12:00:00 - 56 inserts, 22 updates, 2 deletes (total: 80)
-📊 💡 BEST TIME TO SWITCH: 2025-12-09 12:00:00 (only 80 operations)
-```
+### Using Docker (Recommended)
 
-**📖 See [STATISTICS.md](STATISTICS.md) for the complete guide including:**
-- How to use statistics for migration planning
-- How to visualize data with charts
-- Best practices for minimizing downtime
-
-## Architecture
-
-```
-┌─────────────┐
-│   MySQL     │
-│  Database   │
-└──────┬──────┘
-       │
-       │ Schema + Data
-       │
-┌──────▼──────────────────────────────────────┐
-│         MySQL to PostgreSQL Proxy            │
-│                                              │
-│  ┌──────────────────────────────────────┐  │
-│  │      Schema Reader & Converter        │  │
-│  │  - Reads INFORMATION_SCHEMA          │  │
-│  │  - Converts MySQL → PostgreSQL types │  │
-│  │  - Builds dependency graph           │  │
-│  └──────────────────────────────────────┘  │
-│                                              │
-│  ┌──────────────────────────────────────┐  │
-│  │         Data Transfer Engine         │  │
-│  │  - Records start timestamp           │  │
-│  │  - Batch processing                  │  │
-│  │  - Topological ordering              │  │
-│  │  - Error recovery                    │  │
-│  └──────────────────────────────────────┘  │
-│                                              │
-│  ┌──────────────────────────────────────┐  │
-│  │        Catch-Up Sync (NEW!)          │  │
-│  │  - Queries general_log from start    │  │
-│  │  - Replays changes during transfer   │  │
-│  │  - Loops until synchronized          │  │
-│  │  - Ensures zero data loss            │  │
-│  └──────────────────────────────────────┘  │
-│                                              │
-│  ┌──────────────────────────────────────┐  │
-│  │         Real-Time Sync               │  │
-│  │  - Monitors general_log              │  │
-│  │  - Event queue (non-blocking)        │  │
-│  │  - Async PostgreSQL writer           │  │
-│  └──────────────────────────────────────┘  │
-└──────┬──────────────────────────────────────┘
-       │
-       │ Replicated Data
-       │
-┌──────▼──────┐
-│ PostgreSQL  │
-│  Database   │
-└─────────────┘
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd "mysql to psql proxy"
 ```
 
-### Components
+2. **Run the Web UI**
+```bash
+./run-web-ui.sh
+```
 
-1. **Schema Reader** (`src/schema/mysql_reader.rs`): Extracts schema from MySQL's `INFORMATION_SCHEMA`
-2. **Schema Converter** (`src/schema/pg_converter.rs`): Converts MySQL schema to PostgreSQL DDL
-3. **Dependency Graph** (`src/schema/dependency.rs`): Builds and sorts tables by foreign key dependencies
-4. **Data Transfer** (`src/migrator/data_transfer.rs`): Handles batch data migration with timestamp recording
-5. **Catch-Up Sync** (`src/realtime/binlog_reader.rs::catchup_from_timestamp`): Replays changes from initial transfer
-6. **Real-Time Sync** (`src/realtime/`): Monitors MySQL changes and replicates to PostgreSQL
-7. **PostgreSQL Writer** (`src/realtime/pg_writer.rs`): Applies changes to PostgreSQL asynchronously
+The Web UI will be available at http://localhost:5009
 
-## Installation
+### Using Docker Compose
 
-### Prerequisites
-
-- Rust 1.75+ (or use Docker)
-- MySQL 5.7+ or 8.0+
-- PostgreSQL 12+
-- Docker and Docker Compose (optional, for containerized deployment)
+```bash
+docker-compose up -d
+```
 
 ### From Source
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd mysql_psql_proxy
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Build the project
 cargo build --release
 
-# The binary will be at: target/release/mysql_psql_proxy
+# Run with web UI
+./target/release/mysql_psql_proxy --web-ui
 ```
 
-### Using Docker
+## ⚙️ Configuration
 
-```bash
-# Build the Docker image
-docker build -t mysql_psql_proxy:latest .
+### Web UI Configuration
 
-# Or use the provided script
-./rebuild-and-run.sh --initial-sync
-```
+1. Open http://localhost:5009 in your browser
+2. Create first user account (appears on first run)
+3. Go to **Settings** tab
+4. Fill in MySQL and PostgreSQL connection details:
+   - **MySQL**: Host, Port, Database, Username, Password
+   - **PostgreSQL**: Host, Port, Database, Username, Password
+5. Configure sync options:
+   - **Batch Size**: Records per batch (default: 100)
+   - **Poll Interval**: Seconds between change checks (default: 10)
+   - **Sync Mode**: Full Sync / Initial Only / Real-time Only
+6. (Optional) Add Gemini API key for intelligent SQL conversion
+7. Click **Save Configuration**
 
-## Configuration
-
-The proxy uses environment variables for configuration. Multiple patterns are supported for flexibility.
-
-### Environment Variables
-
-#### Option 1: Full Connection URLs
-
-```bash
-MYSQL_URL=mysql://user:password@host:3306/database
-PG_URL=postgres://user:password@host:5432/database
-```
-
-#### Option 2: Individual MySQL Variables
-
-```bash
-MYSQL_HOST=192.168.1.237
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=password
-MYSQL_DATABASE=my_database
-```
-
-#### Option 3: Individual PostgreSQL Variables
-
-```bash
-POSTGRES_HOST=192.168.1.237
-POSTGRES_PORT=5432
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=my_database
-```
-
-#### Option 4: Unified Pattern (Recommended)
+### Environment Variables (CLI Mode)
 
 ```bash
 # MySQL Configuration
-DB_HOST=192.168.1.237
-DB_PORT=3306
-DB_USERNAME=root
-DB_PASSWORD=password
-DB_DATABASE=my_database
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_DATABASE=mydb
+export DB_USERNAME=user
+export DB_PASSWORD=password
 
 # PostgreSQL Configuration
-PSQL_DB_HOST=192.168.1.237
-PSQL_DB_PORT=5432
-PSQL_DB_USERNAME=postgres
-PSQL_DB_PASSWORD=postgres
-PSQL_DB_DATABASE=my_database
-```
-
-### Additional Configuration
-
-```bash
-# Sync mode: initial, realtime, or both (default: both)
-SYNC_MODE=both
-
-# Batch size for data transfer (default: 1000)
-BATCH_SIZE=1000
-
-# Log level: trace, debug, info, warn, error (default: info)
-RUST_LOG=info
-```
-
-### Priority Order
-
-The proxy checks environment variables in this order:
-
-1. **MySQL**: `MYSQL_URL` → `MYSQL_*` → `DB_*`
-2. **PostgreSQL**: `PG_URL` → `POSTGRES_*` → `PSQL_DB_*`
-
-## Usage
-
-### Command-Line Arguments
-
-```bash
-# Initial sync only (schema + data)
-./mysql_psql_proxy --initial-sync
-
-# Real-time sync only (monitor changes)
-./mysql_psql_proxy --realtime-sync
-
-# Full sync (initial + real-time)
-./mysql_psql_proxy --full-sync
-```
-
-### Examples
-
-#### Initial Migration
-
-```bash
-# Set environment variables
-export DB_HOST=192.168.1.237
-export DB_PORT=3306
-export DB_USERNAME=root
-export DB_PASSWORD=password
-export DB_DATABASE=source_db
-
-export PSQL_DB_HOST=192.168.1.237
+export PSQL_DB_HOST=localhost
 export PSQL_DB_PORT=5432
-export PSQL_DB_USERNAME=postgres
-export PSQL_DB_PASSWORD=postgres
-export PSQL_DB_DATABASE=target_db
+export PSQL_DB_DATABASE=mydb
+export PSQL_DB_USERNAME=user
+export PSQL_DB_PASSWORD=password
 
-# Run initial sync
-./mysql_psql_proxy --initial-sync
+# Sync Configuration
+export BATCH_SIZE=100
+export POLL_INTERVAL_SECS=10
+
+# Optional: Gemini AI for DB objects migration
+export GEMINI_API_KEY=your-api-key
+export GEMINI_MODEL=gemini-2.0-flash-exp
 ```
 
-#### Real-Time Sync
+## 🎯 Usage
 
+### Web UI Mode (Recommended)
+
+1. **Start the application**
+   ```bash
+   ./run-web-ui.sh
+   ```
+
+2. **Access the dashboard** at http://localhost:5009
+
+3. **Configure connections** in the Settings tab
+
+4. **Select sync mode** in the Home tab:
+   - **Full Sync**: Complete migration + continuous monitoring (recommended for first-time)
+   - **Initial Sync Only**: Schema + data transfer, then stops
+   - **Real-time Sync Only**: Only monitors changes (assumes data already migrated)
+
+5. **Start synchronization** by clicking "Start Sync"
+
+6. **Monitor progress**:
+   - **Home**: Current status and quick stats
+   - **Logs**: Detailed operation logs
+   - **Statistics**: Operation counts and performance metrics
+   - **Chart**: Hourly operation trends with interactive line graph
+
+### CLI Mode
+
+#### Full Sync (Initial + Real-time)
 ```bash
-# Run real-time sync (requires general_log enabled)
-./mysql_psql_proxy --realtime-sync
-```
-
-#### Using Docker
-
-```bash
-docker run --rm \
-  -e DB_HOST=192.168.1.237 \
-  -e DB_PORT=3306 \
-  -e DB_DATABASE=my_db \
-  -e DB_USERNAME=root \
-  -e DB_PASSWORD=password \
-  -e PSQL_DB_HOST=192.168.1.237 \
-  -e PSQL_DB_PORT=5432 \
-  -e PSQL_DB_DATABASE=my_db \
-  -e PSQL_DB_USERNAME=postgres \
-  -e PSQL_DB_PASSWORD=postgres \
-  -e RUST_LOG=info \
-  mysql_psql_proxy:latest \
-  --full-sync
-```
-
-## Catch-Up Sync
-
-**🎯 Zero Data Loss Guarantee**: The catch-up sync mechanism ensures no data is lost during the initial transfer.
-
-### The Problem
-
-During initial data transfer (which can take minutes or hours for large databases), changes may occur in MySQL:
-
-```
-Time 0:00 - Initial sync starts
-Time 0:05 - User INSERT new row (during transfer)
-Time 2:30 - User UPDATE a row (during transfer)
-Time 5:00 - Initial sync completes
-```
-
-Without catch-up, these changes at 0:05 and 2:30 would be **lost**.
-
-### The Solution
-
-When using `--full-sync`, the proxy automatically:
-
-1. **Records** the start timestamp before data transfer
-2. **Transfers** all data in batches
-3. **Queries** `mysql.general_log` for changes since start timestamp
-4. **Applies** all detected changes to PostgreSQL
-5. **Repeats** steps 3-4 until no more changes found
-6. **Starts** real-time sync for ongoing synchronization
-
-This ensures **complete data consistency** between MySQL and PostgreSQL.
-
-### How to Enable
-
-Catch-up sync is **automatically enabled** when using `--full-sync`:
-
-```bash
-docker run --rm \
-  -e DB_HOST=192.168.1.237 \
-  -e DB_PORT=3306 \
-  -e DB_DATABASE=my_db \
-  -e DB_USERNAME=root \
-  -e DB_PASSWORD=password \
-  -e PSQL_DB_HOST=192.168.1.237 \
-  -e PSQL_DB_PORT=5432 \
-  -e PSQL_DB_DATABASE=my_db \
-  -e PSQL_DB_USERNAME=postgres \
-  -e PSQL_DB_PASSWORD=postgres \
-  mysql_psql_proxy:latest \
-  --full-sync
-```
-
-### Log Output
-
-You'll see these messages during catch-up:
-
-```
-INFO  📍 Recording start timestamp for catch-up sync...
-INFO  📍 Start timestamp: 2024-12-08 10:00:00.123456
-
-INFO  🔄 Starting catch-up sync to replay changes from initial transfer
-INFO  🔄 Catch-up iteration #1
-INFO  ⚠️  Found 42 changes that occurred during initial transfer
-INFO  Applying catch-up changes...
-INFO  ✓ Catch-up complete: applied 42 changes out of 42 found
-
-INFO  🔄 Catch-up iteration #2
-INFO  ✓ No changes detected during initial transfer
-INFO  ✓ Catch-up complete: databases are synchronized
-```
-
-### Requirements
-
-Catch-up sync requires the same `general_log` setup as real-time sync (see below).
-
-For detailed information, see [CATCHUP_SYNC.md](CATCHUP_SYNC.md).
-
-## Database Objects Migration
-
-**🎯 Complete Database Migration**: The proxy can migrate not just tables and data, but also:
-
-- ✅ **Views**: Virtual tables based on SELECT queries
-- ✅ **Functions**: Stored functions with return values
-- ✅ **Procedures**: Stored procedures (converted to PostgreSQL functions)
-- ✅ **Triggers**: Automatic event handlers on tables
-
-### ⚠️ Gemini AI Required
-
-Database objects migration requires **Google Gemini API** for accurate conversion:
-
-```bash
-export GEMINI_API_KEY="your-api-key-here"
-export GEMINI_MODEL="gemini-2.0-flash-exp"  # Optional, defaults to gemini-2.0-flash-exp
-```
-
-Or edit `rebuild-and-run.sh` and replace the empty values:
-```bash
--e GEMINI_API_KEY=""  # <- Add your API key here
--e GEMINI_MODEL="gemini-2.0-flash-exp"
-```
-
-**Without Gemini API key**: Database objects (views, functions, procedures, triggers) will be **SKIPPED** to avoid creating broken objects.
-
-**With Gemini API key**: ~90-95% success rate with AI-powered intelligent conversion.
-
-Get your free API key at: https://makersuite.google.com/app/apikey
-
-### Automatic Migration
-
-During `--initial-sync` or `--full-sync` (with GEMINI_API_KEY set), the proxy automatically:
-
-1. **Reads** all database objects from MySQL
-2. **Converts** MySQL syntax to PostgreSQL using Gemini AI
-3. **Creates** the objects in PostgreSQL
-4. **Reports** success/failure for each object
-
-### Syntax Conversion
-
-The proxy performs intelligent conversions:
-
-- Backticks `` `name` `` → Double quotes `"name"`
-- `IFNULL()` → `COALESCE()`
-- `NOW()` → `CURRENT_TIMESTAMP`
-- `TINYINT` → `SMALLINT`
-- `DATETIME` → `TIMESTAMP`
-- MySQL functions/procedures → PostgreSQL PL/pgSQL
-- MySQL triggers → PostgreSQL trigger functions + triggers
-
-### Success Rate
-
-- **Views**: ~95% automatic success
-- **Functions**: ~70% automatic success
-- **Procedures**: ~70% automatic success
-- **Triggers**: ~80% automatic success
-
-Complex objects with MySQL-specific features may require manual adjustment. The proxy logs detailed warnings for objects that need review.
-
-### Example
-
-```
-INFO  Reading database objects from MySQL...
-INFO  Found 5 views, 3 functions, 2 procedures, 4 triggers
-INFO  Migrating database objects to PostgreSQL...
-INFO  Using Gemini AI to convert view: customer_summary
-INFO  ✓ Created view: customer_summary
-INFO  ⏳ Rate limiting: waiting 60s before next Gemini API call...
-INFO  Using Gemini AI to convert function: calculate_discount
-INFO  ✓ Created function: calculate_discount
-INFO  ⏳ Rate limiting: waiting 60s before next Gemini API call...
-INFO  Using Gemini AI to convert procedure: update_inventory
-INFO  ✓ Created procedure: update_inventory
-INFO  View migration complete: 5 successful, 0 failed
-INFO  Function migration complete: 3 successful, 0 failed
-INFO  Procedure migration complete: 2 successful, 0 failed
-INFO  Trigger migration complete: 4 successful, 0 failed
-```
-
-**Note**: Gemini API calls are rate-limited to **1 call per minute** to stay within free tier limits. For 14 objects, migration takes ~14 minutes.
-
-For detailed information, examples, and troubleshooting, see [DATABASE_OBJECTS.md](DATABASE_OBJECTS.md).
-
-## Real-Time Sync Setup
-
-Real-time synchronization requires MySQL's `general_log` to be enabled. The proxy will attempt to enable it automatically, but you may need to configure it manually.
-
-### Automatic Setup
-
-The proxy attempts to enable `general_log` automatically when starting real-time sync. This requires the MySQL user to have `SUPER` privilege.
-
-### Manual Setup
-
-If automatic setup fails, enable it manually:
-
-```sql
--- Connect to MySQL as root or user with SUPER privilege
-SET GLOBAL general_log = 'ON';
-SET GLOBAL log_output = 'TABLE';
-
--- Verify
-SHOW VARIABLES LIKE 'general_log';
-SHOW VARIABLES LIKE 'log_output';
-```
-
-### Granting SUPER Privilege
-
-If your MySQL user doesn't have `SUPER` privilege:
-
-```sql
--- Grant SUPER privilege (MySQL 8.0+)
-GRANT SUPER ON *.* TO 'your_user'@'%';
-FLUSH PRIVILEGES;
-
--- Or for MySQL 5.7
-GRANT SUPER ON *.* TO 'your_user'@'%' IDENTIFIED BY 'your_password';
-FLUSH PRIVILEGES;
-```
-
-### How It Works
-
-1. The proxy polls `mysql.general_log` table every second
-2. It filters for INSERT/UPDATE/DELETE queries
-3. Parses queries to extract table names, columns, and values
-4. Enqueues events to a non-blocking job queue
-5. A background worker applies changes to PostgreSQL asynchronously
-
-### Performance Considerations
-
-- **Polling Interval**: Default is 1 second. Can be adjusted in code.
-- **Queue Size**: Default is 1000 events. Events are dropped if queue is full (logged as warning).
-- **Query Performance**: The `general_log` table can grow large. Consider periodic cleanup:
-  ```sql
-  TRUNCATE TABLE mysql.general_log;
-  ```
-
-## Docker Deployment
-
-### Using Docker Compose
-
-The `docker-compose.yml` file is configured to connect to existing databases. Update the environment variables:
-
-```yaml
-services:
-  proxy:
-    build: .
-    environment:
-      DB_HOST: 192.168.1.237
-      DB_PORT: 3306
-      DB_DATABASE: my_database
-      DB_USERNAME: root
-      DB_PASSWORD: password
-      
-      PSQL_DB_HOST: 192.168.1.237
-      PSQL_DB_PORT: 5432
-      PSQL_DB_DATABASE: my_database
-      PSQL_DB_USERNAME: postgres
-      PSQL_DB_PASSWORD: postgres
-      
-      SYNC_MODE: both
-      BATCH_SIZE: 1000
-      RUST_LOG: info
-    command: ["--full-sync"]
-    restart: unless-stopped
-```
-
-### Build and Run Script
-
-Use the provided `rebuild-and-run.sh` script:
-
-```bash
-# Make executable
-chmod +x rebuild-and-run.sh
-
-# Run with initial sync
-./rebuild-and-run.sh --initial-sync
-
-# Run with real-time sync
-./rebuild-and-run.sh --realtime-sync
-
-# Run with full sync
 ./rebuild-and-run.sh --full-sync
 ```
 
-## Data Type Mappings
+#### Initial Sync Only
+```bash
+./rebuild-and-run.sh --initial-sync
+```
 
-The proxy automatically converts MySQL data types to PostgreSQL equivalents:
+#### Real-time Sync Only
+```bash
+./rebuild-and-run.sh --realtime-sync
+```
 
-| MySQL Type | PostgreSQL Type | Notes |
-|------------|----------------|-------|
-| `TINYINT` | `SMALLINT` | Signed values |
-| `TINYINT UNSIGNED` | `SMALLINT` | Unsigned converted to signed |
-| `SMALLINT` | `SMALLINT` | Direct mapping |
-| `MEDIUMINT` | `INTEGER` | |
-| `INT` / `INTEGER` | `INTEGER` | Direct mapping |
-| `BIGINT` | `BIGINT` | Direct mapping |
-| `FLOAT` | `REAL` | |
-| `DOUBLE` | `DOUBLE PRECISION` | |
-| `DECIMAL(p,s)` | `NUMERIC(p,s)` | Precision preserved |
-| `NUMERIC(p,s)` | `NUMERIC(p,s)` | Direct mapping |
-| `CHAR(n)` | `CHAR(n)` | Length preserved |
-| `VARCHAR(n)` | `VARCHAR(n)` | Length preserved (max 1GB) |
-| `TEXT` | `TEXT` | All TEXT variants → TEXT |
-| `TINYTEXT` | `TEXT` | |
-| `MEDIUMTEXT` | `TEXT` | |
-| `LONGTEXT` | `TEXT` | |
-| `DATE` | `DATE` | Invalid dates → NULL |
-| `DATETIME` | `TIMESTAMP` | Invalid dates → NULL |
-| `TIMESTAMP` | `TIMESTAMP` | Invalid dates → NULL |
-| `TIME` | `TIME` | |
-| `YEAR` | `SMALLINT` | |
-| `BINARY(n)` | `BYTEA` | |
-| `VARBINARY(n)` | `BYTEA` | |
-| `BLOB` | `BYTEA` | All BLOB variants → BYTEA |
-| `TINYBLOB` | `BYTEA` | |
-| `MEDIUMBLOB` | `BYTEA` | |
-| `LONGBLOB` | `BYTEA` | |
-| `JSON` | `JSONB` | |
-| `ENUM` | `VARCHAR` | Values preserved |
-| `SET` | `TEXT` | Comma-separated values |
-| `AUTO_INCREMENT` | `SERIAL` / `IDENTITY` | Based on column type |
+## 🔄 Sync Modes Explained
 
-### Special Handling
+### 1. Full Sync (Recommended for First-Time)
+**What it does:**
+- Phase 1: Migrates schema and transfers all existing data
+- Phase 2: Replays changes that occurred during initial transfer (catch-up)
+- Phase 3: Starts real-time monitoring of new changes
 
-- **AUTO_INCREMENT**: Converted to `SERIAL` for INTEGER columns or `IDENTITY` for BIGINT
-- **Invalid Dates**: MySQL's `0000-00-00` dates are converted to `NULL` in PostgreSQL
-- **VARCHAR Length**: If length > 10MB, converted to `TEXT` for safety
-- **Default Values**: Invalid date defaults (`0000-00-00`) are skipped during table creation
+**Best for:**
+- First-time migration from MySQL to PostgreSQL
+- Complete database replication
+- Ensuring zero data loss
 
-## Troubleshooting
+### 2. Initial Sync Only
+**What it does:**
+- Migrates schema to PostgreSQL
+- Transfers all existing data
+- Stops after completion
 
-### Common Issues
+**Best for:**
+- One-time data migration
+- Testing schema conversion
+- Creating a snapshot of current data
 
-#### 1. "Cannot access mysql.general_log"
+### 3. Real-time Sync Only
+**What it does:**
+- Assumes schema and data already exist in PostgreSQL
+- Only monitors and replicates new changes
+- Uses MySQL general_log for change detection
 
-**Problem**: Real-time sync cannot read `general_log` table.
+**Best for:**
+- Resuming sync after interruption
+- Monitoring ongoing changes after initial migration
+- Continuous replication setups
 
-**Solution**:
+## 🗃️ Database Objects Migration
+
+The tool can migrate complex database objects using two methods:
+
+### 1. Regex-Based Conversion (Default)
+Automatically converts basic SQL syntax:
+- Data type mapping (INT → INTEGER, VARCHAR → VARCHAR, etc.)
+- Function syntax adjustments
+- Trigger format conversion
+
+### 2. AI-Powered Conversion (Optional)
+With Gemini API key configured:
+- Intelligent SQL translation
+- Complex syntax handling
+- Parameter and variable mapping
+- Error-free PostgreSQL generation
+
+**To enable AI conversion:**
+1. Get a free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Add it in Settings → Gemini API Key
+3. AI will be used automatically for views, functions, procedures, and triggers
+
+**Rate Limiting:**
+- 1 API call per minute to avoid quota issues
+- Automatic fallback to regex conversion on quota exceeded
+
+## 📊 Statistics & Monitoring
+
+### Real-Time Statistics
+The tool tracks every operation and provides:
+- **Hourly aggregation**: Operations grouped by hour
+- **Operation breakdown**: Separate counts for INSERT, UPDATE, DELETE
+- **Success rates**: Track successful vs failed operations
+- **Persistent storage**: All stats saved to SQLite database
+
+### Interactive Chart
+- **Line graph** showing operation trends over time
+- **Three colored lines**: Green (INSERT), Blue (UPDATE), Red (DELETE)
+- **Smooth curves** with filled areas for easy visualization
+- **Hover tooltips** showing exact operation counts
+- **Last 24 hours** of data displayed
+
+### Accessing Statistics
+- **Web UI**: Go to Chart tab for visual representation
+- **Database**: Query `operation_stats` table in SQLite for custom analytics
+- **API**: `/api/chart-stats` endpoint returns JSON data
+
+## 🔐 Security
+
+### Authentication
+- **First-time setup**: Create initial admin user on first launch
+- **Password hashing**: bcrypt with secure salt
+- **Session management**: HTTP-only cookies with expiration
+- **Protected routes**: All API endpoints require authentication
+
+### User Management
+- **Profile updates**: Change email and password anytime
+- **Session timeout**: Automatic logout after inactivity
+- **Secure storage**: User credentials stored in SQLite with encryption
+
+## 🐳 Docker Deployment
+
+### Using Docker Compose
+
+Create `docker-compose.yml`:
+```yaml
+version: '3.8'
+
+services:
+  mysql-psql-sync:
+    image: mysql_psql_proxy:latest
+    ports:
+      - "5009:5009"
+    volumes:
+      - ./mysql_psql_data:/app/data
+    environment:
+      - RUST_LOG=info
+    command: --web-ui
+    restart: unless-stopped
+```
+
+Run:
+```bash
+docker-compose up -d
+```
+
+### Using Docker Run
+
+```bash
+docker run -d \
+  -p 5009:5009 \
+  -v $(pwd)/mysql_psql_data:/app/data \
+  -e RUST_LOG=info \
+  --name mysql_psql_ui \
+  mysql_psql_proxy:latest --web-ui
+```
+
+### Volume Persistence
+The `/app/data` volume contains:
+- `config.db`: SQLite database with all settings
+- User credentials and sessions
+- Operation statistics
+- Configuration history
+
+## 🛠️ Troubleshooting
+
+### General_log Errors
+**Problem**: `general_log is not enabled`
+**Solution**: The tool enables it automatically if you have SUPER privilege. If not:
 ```sql
--- Grant SUPER privilege
-GRANT SUPER ON *.* TO 'your_user'@'%';
-FLUSH PRIVILEGES;
-
--- Or enable general_log manually
 SET GLOBAL general_log = 'ON';
 SET GLOBAL log_output = 'TABLE';
 ```
 
-#### 2. "date/time field value out of range"
+### First Operation Not Detected
+**Problem**: First change after starting sync is missed
+**Solution**: This is now fixed! The tool waits 2 seconds after initialization before declaring sync active.
 
-**Problem**: MySQL has invalid dates (`0000-00-00`) that PostgreSQL rejects.
+### Slow Performance
+**Problem**: High CPU or slow queries
+**Solutions**:
+- Increase `POLL_INTERVAL_SECS` (default: 10)
+- Reduce `BATCH_SIZE` if memory is limited
+- The tool automatically cleans old general_log entries
 
-**Solution**: The proxy automatically handles this by converting invalid dates to NULL. If you still see errors, check:
-- Column allows NULL in PostgreSQL schema
-- Default values don't contain invalid dates
+### Connection Errors
+**Problem**: Cannot connect to MySQL/PostgreSQL
+**Solutions**:
+- Verify credentials in Settings
+- Check network connectivity
+- Ensure databases are accessible from container
+- Use `Test Connection` button in Web UI
 
-#### 3. "operator does not exist: integer = text"
+### Chart Shows No Data
+**Problem**: Operations occur but chart is empty
+**Solution**: The tool now saves statistics to SQLite. Make sure:
+- Real-time sync is running
+- Operations are being made in MySQL
+- Wait 2-4 seconds for first detection
+- Check Logs tab for operation confirmations
 
-**Problem**: Type mismatch in WHERE clauses during real-time sync.
+### Database Object Migration Fails
+**Problem**: Views/functions not migrating correctly
+**Solutions**:
+- Add Gemini API key for AI-powered conversion
+- Check logs for specific SQL errors
+- Manually adjust complex objects after migration
+- Some MySQL-specific features may need manual conversion
 
-**Solution**: The proxy automatically detects and converts integer values. If issues persist:
-- Check column types match between MySQL and PostgreSQL
-- Verify primary key columns are correctly identified
+## 📚 API Endpoints
 
-#### 4. "Event queue is full"
+### Authentication
+- `POST /api/login` - User login
+- `POST /api/logout` - User logout
+- `GET /api/check-auth` - Check authentication status
+- `POST /api/setup-first-user` - Create first user
 
-**Problem**: PostgreSQL writer is too slow, queue fills up.
+### Configuration
+- `GET /api/config` - Get current configuration
+- `POST /api/config` - Update configuration
+- `POST /api/test-connection` - Test database connections
 
-**Solution**:
-- Increase queue size in code (default: 1000)
-- Check PostgreSQL performance
-- Reduce batch size or increase PostgreSQL connection pool
+### Sync Control
+- `POST /api/sync/start` - Start synchronization
+- `POST /api/sync/stop` - Stop synchronization
+- `GET /api/status` - Get sync status
 
-#### 5. "Duplicate key value"
+### Monitoring
+- `GET /api/stats` - Get sync statistics
+- `GET /api/logs` - Get operation logs
+- `GET /api/chart-stats` - Get hourly chart data
 
-**Problem**: Trying to insert rows that already exist.
+### User Management
+- `GET /api/profile` - Get user profile
+- `POST /api/update-email` - Update user email
+- `POST /api/update-password` - Change password
 
-**Solution**: This is expected if:
-- Initial sync was run multiple times
-- Real-time sync is catching up on old changes
+## 🏗️ Architecture
 
-The proxy logs warnings and skips duplicate rows.
+### Technology Stack
+- **Backend**: Rust (Tokio async runtime)
+- **Web Framework**: Axum
+- **Database Drivers**: sqlx (MySQL, PostgreSQL, SQLite)
+- **Frontend**: Vanilla JavaScript, Chart.js
+- **Storage**: SQLite for config and stats
+- **AI Integration**: Google Gemini API
 
-#### 6. "value too long for type character varying(255)"
+### Components
+1. **Schema Reader**: Analyzes MySQL schema structure
+2. **Table Creator**: Generates PostgreSQL-compatible DDL
+3. **Data Migrator**: Bulk transfers with batching
+4. **Binlog Reader**: Monitors MySQL general_log for changes
+5. **PG Writer**: Applies operations to PostgreSQL
+6. **Stats Logger**: Tracks operations in SQLite
+7. **Web Server**: Axum HTTP server with authentication
+8. **Routine Migrator**: Converts database objects
 
-**Problem**: VARCHAR length mismatch between MySQL and PostgreSQL.
-
-**Solution**: The proxy should handle this automatically. If not:
-- Check `CHARACTER_MAXIMUM_LENGTH` is correctly read from MySQL
-- Verify `pg_converter.rs` is using the correct length
-
-### Debugging
-
-Enable debug logging:
-
-```bash
-RUST_LOG=debug ./mysql_psql_proxy --realtime-sync
+### Data Flow
+```
+MySQL → Schema Reader → Table Creator → PostgreSQL
+  ↓                                         ↑
+General Log → Binlog Reader → Event Queue → PG Writer
+                     ↓
+              Stats Logger → SQLite → Chart API → Web UI
 ```
 
-Or in Docker:
-
-```bash
-docker run --rm \
-  -e RUST_LOG=debug \
-  ... \
-  mysql_psql_proxy:latest \
-  --realtime-sync
-```
-
-### Log Levels
-
-- `trace`: Very detailed logs (not recommended for production)
-- `debug`: Detailed logs for debugging
-- `info`: Normal operation logs (default)
-- `warn`: Warnings only
-- `error`: Errors only
-
-## Limitations
-
-### Known Limitations
-
-1. **Schema Differences**:
-   - MySQL-specific features (e.g., `ENUM`, `SET`) are converted but may not preserve exact behavior
-   - Some MySQL functions in default values may not work in PostgreSQL
-
-2. **Real-Time Sync**:
-   - Uses polling (1-second interval) rather than true binlog streaming
-   - Requires `general_log` to be enabled (performance impact)
-   - May miss changes if `general_log` table is truncated
-
-3. **Data Types**:
-   - `YEAR` type converted to `SMALLINT` (loses type semantics)
-   - `SET` type converted to `TEXT` (loses set operations)
-
-4. **Performance**:
-   - Large `general_log` table can slow down queries
-   - No built-in cleanup of `general_log` (manual cleanup required)
-
-5. **Transactions**:
-   - Real-time sync processes each change individually (not transactional)
-   - If a change fails, it's retried but not rolled back with related changes
-
-### Not Supported
-
-- MySQL replication-specific features
-- Stored procedures, functions, triggers (schema only)
-- Views (not migrated)
-- Partitioning (not migrated)
-- Full-text indexes (converted to regular indexes)
-
-## Performance
-
-### Benchmarks
-
-- **Schema Migration**: ~100-200 tables/second
-- **Data Transfer**: ~10,000-50,000 rows/second (depends on row size and network)
-- **Real-Time Sync**: <100ms latency (1-second polling + processing time)
-
-### Optimization Tips
-
-1. **Batch Size**: Increase `BATCH_SIZE` for faster initial sync (default: 1000)
-   ```bash
-   BATCH_SIZE=5000 ./mysql_psql_proxy --initial-sync
-   ```
-
-2. **Connection Pooling**: Already enabled by default
-
-3. **PostgreSQL Tuning**: 
-   - Increase `shared_buffers`
-   - Tune `work_mem` for large batches
-   - Consider disabling `fsync` during initial sync (not recommended for production)
-
-4. **MySQL general_log**:
-   - Periodically truncate to maintain performance
-   - Consider using file-based logging instead of table (not supported by proxy)
-
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please:
-
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+4. Submit a pull request
 
-### Development Setup
+## 📄 License
 
-```bash
-# Clone and build
-git clone <repository-url>
-cd mysql_psql_proxy
-cargo build
+[Your License Here]
 
-# Run tests
-cargo test
+## 🙋 Support
 
-# Run with debug logging
-RUST_LOG=debug cargo run -- --initial-sync
-```
+For issues, questions, or feature requests:
+- Open an issue on GitHub
+- Check logs at `/api/logs` for debugging
+- Enable `RUST_LOG=debug` for detailed logging
 
-## License
+## 🎉 Acknowledgments
 
-[Add your license here]
-
-## Support
-
-For issues, questions, or contributions, please open an issue on the repository.
+Built with:
+- Rust and Tokio
+- Axum web framework
+- sqlx database toolkit
+- Chart.js for visualizations
+- Google Gemini AI for intelligent SQL conversion
 
 ---
 
-**Note**: This proxy is designed for one-way synchronization from MySQL to PostgreSQL. It does not handle bidirectional sync or conflict resolution.
+**Version**: 1.0.0  
+**Author**: [Your Name]  
+**Last Updated**: December 2025

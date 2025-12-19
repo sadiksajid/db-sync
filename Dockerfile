@@ -10,13 +10,13 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     cargo build --release && \
-    rm -rf src
+    rm -rf src target/release/mysql_psql_proxy* target/release/deps/mysql_psql_proxy*
 
 # Copy source code and static files
 COPY src ./src
 COPY static ./static
 
-# Build the application
+# Build the application (force rebuild of main binary)
 RUN cargo build --release
 
 # Runtime stage

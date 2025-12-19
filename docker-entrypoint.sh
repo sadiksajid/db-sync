@@ -18,16 +18,9 @@ if [ ! -x /usr/local/bin/mysql_psql_proxy ]; then
   exit 1
 fi
 
-# Test binary
-echo "🧪 Testing binary..."
-/usr/local/bin/mysql_psql_proxy --version 2>&1 || echo "⚠️  --version failed with code $?"
-
 echo "🔧 Running: /usr/local/bin/mysql_psql_proxy $@"
 echo "📝 RUST_LOG=$RUST_LOG"
 
-# Don't use exec so we can catch the exit code
-/usr/local/bin/mysql_psql_proxy "$@" 2>&1
-EXIT_CODE=$?
-echo "❌ Binary exited with code: $EXIT_CODE"
-exit $EXIT_CODE
+# Use exec to replace the shell with the application
+exec /usr/local/bin/mysql_psql_proxy "$@"
 

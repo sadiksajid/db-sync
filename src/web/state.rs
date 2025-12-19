@@ -21,6 +21,7 @@ pub struct SyncConfig {
     // Sync Configuration
     pub batch_size: usize,
     pub poll_interval_secs: u64,
+    pub sync_mode: String,
     
     // Gemini API Configuration
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,6 +44,7 @@ impl Default for SyncConfig {
             psql_db_password: String::new(),
             batch_size: 100,
             poll_interval_secs: 10,
+            sync_mode: "full-sync".to_string(),
             gemini_api_key: None,
             gemini_model: "gemini-2.0-flash-exp".to_string(),
         }

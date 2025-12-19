@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::routines::{MySQLFunction, MySQLProcedure, MySQLTrigger, MySQLView};
 

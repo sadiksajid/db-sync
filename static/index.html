@@ -122,11 +122,25 @@
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
         <header class="bg-surface-10 backdrop-blur-lg px-12 py-8 border-b border-primary-0/20 shadow-2xl">
-            <h1 class="text-primary-0 text-4xl font-bold mb-2 tracking-tight flex items-center gap-3">
-                <span class="iconify" data-icon="solar:transfer-horizontal-bold" data-width="40"></span>
-                MySQL to PostgreSQL Sync
-            </h1>
-            <p class="text-primary-20 text-lg opacity-90">Real-time Database Migration & Synchronization Control Panel</p>
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-primary-0 text-4xl font-bold mb-2 tracking-tight flex items-center gap-3">
+                        <span class="iconify" data-icon="solar:transfer-horizontal-bold" data-width="40"></span>
+                        MySQL to PostgreSQL Sync
+                    </h1>
+                    <p class="text-primary-20 text-lg opacity-90">Real-time Database Migration & Synchronization Control Panel</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="showSection('profile'); loadProfile();" class="px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:user-bold" data-width="20"></span>
+                        Profile
+                    </button>
+                    <button onclick="logout()" class="px-6 py-3 bg-surface-20 hover:bg-surface-30 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:logout-2-bold" data-width="20"></span>
+                        Logout
+                    </button>
+                </div>
+            </div>
         </header>
 
         <!-- Navigation -->
@@ -156,6 +170,12 @@
                         <span>Chart</span>
                     </button>
                 </li>
+                <li>
+                    <button type="button" onclick="showSection('profile')" id="nav-profile" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:user-bold" data-width="24"></span>
+                        <span>Profile</span>
+                    </button>
+                </li>
             </ul>
         </nav>
 
@@ -177,6 +197,23 @@
                             <span class="status-indicator inline-block w-3 h-3 rounded-full mr-2 bg-warning-10 shadow-lg"></span>
                             <span id="status-text-home" class="font-semibold text-white">Idle</span>
                         </span>
+                    </div>
+                    <div class="mb-6">
+                        <label for="sync-mode" class="block text-gray-300 font-semibold mb-3">
+                            <span class="iconify inline-block mr-2" data-icon="solar:settings-bold" data-width="18"></span>
+                            Sync Mode
+                        </label>
+                        <select id="sync-mode" onchange="updateSyncModeDescription()" class="w-full px-4 py-3 bg-surface-20 text-white border border-primary-0/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-0 focus:border-transparent transition-all">
+                            <option value="full-sync">Full Sync (Initial + Real-time)</option>
+                            <option value="initial-sync">Initial Sync Only (Schema + Data)</option>
+                            <option value="realtime-sync">Real-time Sync Only (Binlog)</option>
+                        </select>
+                        <div id="sync-mode-description" class="mt-3 p-3 bg-surface-20 rounded-lg border border-primary-0/20">
+                            <p class="text-xs text-gray-300">
+                                <span class="iconify inline-block text-primary-0" data-icon="solar:info-circle-bold" data-width="16"></span>
+                                <span id="sync-mode-text" class="ml-1"></span>
+                            </p>
+                        </div>
                     </div>
                     <div class="flex gap-3 flex-wrap">
                         <button onclick="startSync()" class="flex-1 min-w-[140px] px-6 py-3 bg-gradient-to-r from-success-0 to-success-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-success-10/50 transition-all duration-300 flex items-center justify-center gap-2">
@@ -414,6 +451,17 @@
                     <span class="iconify" data-icon="solar:chart-bold" data-width="28"></span>
                     Live Operations Chart (Hourly)
                 </h2>
+                
+                <!-- No Data Message -->
+                <div id="chart-no-data" class="hidden text-center py-16">
+                    <div class="inline-flex items-center justify-center w-20 h-20 bg-surface-20 rounded-full mb-4">
+                        <span class="iconify text-gray-400" data-icon="solar:chart-bold" data-width="40"></span>
+                    </div>
+                    <h3 class="text-xl text-gray-300 font-semibold mb-2">No Operations Data Yet</h3>
+                    <p class="text-gray-400">Start a synchronization to see real-time operation statistics here.</p>
+                    <p class="text-gray-500 text-sm mt-2">Chart updates automatically every 5 seconds during sync.</p>
+                </div>
+                
                 <canvas id="operationsChart" class="max-h-96"></canvas>
                 
                 <div class="mt-8 p-6 bg-surface-20 rounded-xl border border-primary-0/10">
@@ -422,9 +470,202 @@
                         <li>Data is automatically refreshed every 5 seconds</li>
                         <li>Shows aggregated operations per hour</li>
                         <li>Helps identify peak sync times for optimal database switching</li>
+                        <li>Data is collected from real-time sync operations (INSERT, UPDATE, DELETE)</li>
                     </ul>
                 </div>
             </div>
+        </div>
+
+        <!-- PROFILE SECTION -->
+        <div id="section-profile" class="section hidden p-8 animate-fade-in">
+            <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
+                <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:user-bold" data-width="28"></span>
+                    Profile & Account Settings
+                </h2>
+
+                <!-- Current Profile Info -->
+                <div class="bg-surface-20 rounded-xl p-6 mb-6 border border-primary-0/10">
+                    <h3 class="text-primary-20 font-bold mb-4 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:info-circle-bold" data-width="24"></span>
+                        Current Account
+                    </h3>
+                    <div class="space-y-2 text-gray-300">
+                        <p><strong class="text-primary-0">Email:</strong> <span id="profile-email">Loading...</span></p>
+                        <p><strong class="text-primary-0">Member Since:</strong> <span id="profile-created">Loading...</span></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Update Email Form -->
+                    <div class="bg-surface-20 rounded-xl p-6 border border-primary-0/10">
+                        <h3 class="text-primary-20 font-bold mb-4 flex items-center gap-2">
+                            <span class="iconify" data-icon="solar:letter-bold" data-width="24"></span>
+                            Update Email
+                        </h3>
+                        
+                        <div id="email-message" class="hidden mb-4"></div>
+                        
+                        <form id="update-email-form" class="space-y-4">
+                            <div>
+                                <label class="block text-gray-300 font-semibold mb-2 text-sm">New Email</label>
+                                <input 
+                                    type="email" 
+                                    id="new-email" 
+                                    required
+                                    class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                                    placeholder="new@email.com"
+                                >
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 font-semibold mb-2 text-sm">Current Password</label>
+                                <input 
+                                    type="password" 
+                                    id="email-current-password" 
+                                    required
+                                    class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                                    placeholder="Enter current password"
+                                >
+                            </div>
+                            
+                            <button 
+                                type="submit"
+                                class="w-full px-6 py-3 bg-gradient-to-r from-info-0 to-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-info-10/50 transition-all duration-300 flex items-center justify-center gap-2"
+                            >
+                                <span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span>
+                                Update Email
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Update Password Form -->
+                    <div class="bg-surface-20 rounded-xl p-6 border border-primary-0/10">
+                        <h3 class="text-primary-20 font-bold mb-4 flex items-center gap-2">
+                            <span class="iconify" data-icon="solar:lock-password-bold" data-width="24"></span>
+                            Update Password
+                        </h3>
+                        
+                        <div id="password-message" class="hidden mb-4"></div>
+                        
+                        <form id="update-password-form" class="space-y-4">
+                            <div>
+                                <label class="block text-gray-300 font-semibold mb-2 text-sm">Current Password</label>
+                                <input 
+                                    type="password" 
+                                    id="password-current" 
+                                    required
+                                    class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                                    placeholder="Enter current password"
+                                >
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 font-semibold mb-2 text-sm">New Password</label>
+                                <input 
+                                    type="password" 
+                                    id="password-new" 
+                                    required
+                                    minlength="6"
+                                    class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                                    placeholder="Minimum 6 characters"
+                                >
+                                <p class="text-gray-500 text-xs mt-2">Password must be at least 6 characters long</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-300 font-semibold mb-2 text-sm">Confirm New Password</label>
+                                <input 
+                                    type="password" 
+                                    id="password-confirm" 
+                                    required
+                                    minlength="6"
+                                    class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                                    placeholder="Re-enter new password"
+                                >
+                                <p id="password-match-profile" class="text-xs mt-2 hidden"></p>
+                            </div>
+                            
+                            <button 
+                                type="submit"
+                                class="w-full px-6 py-3 bg-gradient-to-r from-warning-0 to-warning-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-warning-10/50 transition-all duration-300 flex items-center justify-center gap-2"
+                            >
+                                <span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span>
+                                Update Password
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- First Time Setup Modal -->
+    <div id="setup-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-surface-10 rounded-3xl p-8 shadow-2xl border border-primary-0/30 max-w-md w-full">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-primary-0/20 rounded-2xl mb-4">
+                    <span class="iconify text-primary-0" data-icon="solar:user-plus-bold" data-width="32"></span>
+                </div>
+                <h2 class="text-2xl font-bold text-primary-0 mb-2">Welcome!</h2>
+                <p class="text-gray-400">Create your first admin account to get started</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="setup-error" class="hidden bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-6">
+                <div class="flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:danger-circle-bold" data-width="20"></span>
+                    <span id="setup-error-text"></span>
+                </div>
+            </div>
+
+            <!-- Setup Form -->
+            <form id="setup-form-home" class="space-y-6">
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Email</label>
+                    <input 
+                        type="email" 
+                        id="setup-email-home" 
+                        required
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="admin@example.com"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Password</label>
+                    <input 
+                        type="password" 
+                        id="setup-password-home" 
+                        required
+                        minlength="6"
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="Minimum 6 characters"
+                    >
+                    <p class="text-gray-500 text-xs mt-2">Password must be at least 6 characters long</p>
+                </div>
+
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Confirm Password</label>
+                    <input 
+                        type="password" 
+                        id="setup-confirm-password-home" 
+                        required
+                        minlength="6"
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="Re-enter your password"
+                    >
+                    <p id="password-match-message" class="text-xs mt-2 hidden"></p>
+                </div>
+
+                <button 
+                    type="submit"
+                    class="w-full px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300 flex items-center justify-center gap-2"
+                >
+                    <span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span>
+                    Create Account & Continue
+                </button>
+            </form>
         </div>
     </div>
 
@@ -453,6 +694,23 @@
         
         // Chart instance
         let operationsChart = null;
+        
+        // Dashboard initialization flag
+        let isDashboardInitialized = false;
+
+        // Update sync mode description
+        function updateSyncModeDescription() {
+            const syncMode = document.getElementById('sync-mode').value;
+            const descriptionText = document.getElementById('sync-mode-text');
+            
+            const descriptions = {
+                'full-sync': '<strong>Recommended for first-time setup.</strong> Performs complete schema migration, initial data transfer, catch-up sync, and then continues with real-time monitoring of changes.',
+                'initial-sync': '<strong>One-time migration.</strong> Transfers database schema and all data from MySQL to PostgreSQL, then stops. Use this if you only need to copy data once.',
+                'realtime-sync': '<strong>Live monitoring only.</strong> Assumes schema and data already exist in PostgreSQL. Only monitors and replicates new changes from MySQL binlog. Use this after initial migration is complete.'
+            };
+            
+            descriptionText.innerHTML = descriptions[syncMode] || descriptions['full-sync'];
+        }
 
         // Section navigation
         function showSection(sectionName) {
@@ -467,13 +725,16 @@
 
         // Initialize on load
         window.addEventListener('load', () => {
-            loadConfig();
-            initChart();
-            startAutoRefresh();
+            // Don't load data yet, wait for auth check
             showSection('home'); // Show home by default
+            checkAuth(); // This will handle initialization after auth
         });
 
         function startAutoRefresh() {
+            // Clear existing intervals first
+            stopAutoRefresh();
+            
+            // Start new intervals
             statusInterval = setInterval(updateStatus, 2000);
             statsInterval = setInterval(updateStats, 3000);
             logsInterval = setInterval(refreshLogs, 5000);
@@ -482,47 +743,82 @@
         }
 
         function stopAutoRefresh() {
-            clearInterval(statusInterval);
-            clearInterval(logsInterval);
-            clearInterval(chartInterval);
+            if (statusInterval) clearInterval(statusInterval);
+            if (statsInterval) clearInterval(statsInterval);
+            if (logsInterval) clearInterval(logsInterval);
+            if (chartInterval) clearInterval(chartInterval);
         }
 
         function initChart() {
+            // Destroy existing chart if it exists
+            if (operationsChart) {
+                operationsChart.destroy();
+            }
+            
             const ctx = document.getElementById('operationsChart');
+            if (!ctx) {
+                console.warn('Chart canvas not found');
+                return;
+            }
+            
             operationsChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'line',
                 data: {
                     labels: [],
                     datasets: [
                         {
                             label: 'Inserts',
                             data: [],
-                            backgroundColor: '#4ed882',
+                            backgroundColor: 'rgba(31, 210, 114, 0.1)',
                             borderColor: '#1fd272',
-                            borderWidth: 2
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#1fd272',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2
                         },
                         {
                             label: 'Updates',
                             data: [],
-                            backgroundColor: '#4077d1',
-                            borderColor: '#21498a',
-                            borderWidth: 2
+                            backgroundColor: 'rgba(64, 119, 209, 0.1)',
+                            borderColor: '#4077d1',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#4077d1',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2
                         },
                         {
                             label: 'Deletes',
                             data: [],
-                            backgroundColor: '#d94a4a',
-                            borderColor: '#9c2121',
-                            borderWidth: 2
+                            backgroundColor: 'rgba(217, 74, 74, 0.1)',
+                            borderColor: '#d94a4a',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#d94a4a',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
                     scales: {
                         x: {
-                            stacked: false,
                             ticks: {
                                 color: '#ffffff'
                             },
@@ -540,10 +836,10 @@
                             }
                         },
                         y: {
-                            stacked: false,
                             beginAtZero: true,
                             ticks: {
-                                color: '#ffffff'
+                                color: '#ffffff',
+                                precision: 0
                             },
                             grid: {
                                 color: 'rgba(255, 255, 255, 0.1)'
@@ -589,10 +885,27 @@
         async function updateChart() {
             try {
                 const response = await fetch('/api/chart-stats');
+                
+                if (response.status === 401) {
+                    return; // Not authenticated
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.data) {
                     const chartData = result.data;
+                    
+                    // Check if we have data
+                    if (chartData.length === 0) {
+                        // Show no data message, hide chart
+                        document.getElementById('chart-no-data').classList.remove('hidden');
+                        document.getElementById('operationsChart').classList.add('hidden');
+                        return;
+                    }
+                    
+                    // Hide no data message, show chart
+                    document.getElementById('chart-no-data').classList.add('hidden');
+                    document.getElementById('operationsChart').classList.remove('hidden');
                     
                     // Extract labels (hours) and data
                     const labels = chartData.map(d => {
@@ -611,11 +924,13 @@
                     const deletes = chartData.map(d => d.deletes);
                     
                     // Update chart
-                    operationsChart.data.labels = labels;
-                    operationsChart.data.datasets[0].data = inserts;
-                    operationsChart.data.datasets[1].data = updates;
-                    operationsChart.data.datasets[2].data = deletes;
-                    operationsChart.update();
+                    if (operationsChart) {
+                        operationsChart.data.labels = labels;
+                        operationsChart.data.datasets[0].data = inserts;
+                        operationsChart.data.datasets[1].data = updates;
+                        operationsChart.data.datasets[2].data = deletes;
+                        operationsChart.update();
+                    }
                 }
             } catch (error) {
                 console.error('Failed to update chart:', error);
@@ -625,6 +940,12 @@
         async function loadConfig() {
             try {
                 const response = await fetch('/api/config');
+                
+                if (response.status === 401) {
+                    // Not authenticated, don't log error
+                    return;
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.data) {
@@ -641,6 +962,7 @@
                     document.getElementById('psql_db_password').value = config.psql_db_password || '';
                     document.getElementById('batch_size').value = config.batch_size || 100;
                     document.getElementById('poll_interval_secs').value = config.poll_interval_secs || 10;
+                    document.getElementById('sync-mode').value = config.sync_mode || 'full-sync';
                     document.getElementById('gemini_api_key').value = config.gemini_api_key || '';
                     document.getElementById('gemini_model').value = config.gemini_model || 'gemini-2.0-flash-exp';
                 }
@@ -663,6 +985,7 @@
                 psql_db_password: document.getElementById('psql_db_password').value,
                 batch_size: parseInt(document.getElementById('batch_size').value),
                 poll_interval_secs: parseInt(document.getElementById('poll_interval_secs').value),
+                sync_mode: document.getElementById('sync-mode').value,
                 gemini_api_key: document.getElementById('gemini_api_key').value || null,
                 gemini_model: document.getElementById('gemini_model').value,
             };
@@ -731,6 +1054,26 @@
 
         async function startSync() {
             try {
+                // First, save the current sync mode to configuration
+                const syncMode = document.getElementById('sync-mode').value;
+                
+                // Get current config and update sync_mode
+                const configResponse = await fetch('/api/config');
+                if (configResponse.ok) {
+                    const configResult = await configResponse.json();
+                    if (configResult.success && configResult.data) {
+                        configResult.data.sync_mode = syncMode;
+                        
+                        // Save updated config
+                        await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(configResult.data)
+                        });
+                    }
+                }
+                
+                // Now start the sync
                 const response = await fetch('/api/sync/start', { method: 'POST' });
                 const result = await response.json();
                 
@@ -762,6 +1105,11 @@
         async function updateStatus() {
             try {
                 const response = await fetch('/api/status');
+                
+                if (response.status === 401) {
+                    return; // Not authenticated
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.data) {
@@ -812,6 +1160,11 @@
         async function updateStats() {
             try {
                 const response = await fetch('/api/stats');
+                
+                if (response.status === 401) {
+                    return; // Not authenticated
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.data) {
@@ -841,6 +1194,11 @@
         async function refreshLogs() {
             try {
                 const response = await fetch('/api/logs');
+                
+                if (response.status === 401) {
+                    return; // Not authenticated
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.data) {
@@ -894,6 +1252,310 @@
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // Authentication check
+        async function checkAuth() {
+            try {
+                // First, check if any users exist
+                const hasUsersResponse = await fetch('/api/auth/has-users');
+                const hasUsersResult = await hasUsersResponse.json();
+                
+                if (hasUsersResult.success && !hasUsersResult.data) {
+                    // No users exist, show setup modal
+                    document.getElementById('setup-modal').classList.remove('hidden');
+                    // Don't initialize data loading
+                    return;
+                }
+                
+                // Users exist, check authentication
+                const authResponse = await fetch('/api/auth/check');
+                const authResult = await authResponse.json();
+                
+                if (!authResult.success || !authResult.data) {
+                    // Not authenticated, redirect to login
+                    window.location.href = '/login';
+                    return;
+                }
+                
+                // Authenticated! Initialize the dashboard
+                try {
+                    initializeDashboard();
+                } catch (dashError) {
+                    console.error('Dashboard initialization error:', dashError);
+                    // Don't redirect on dashboard errors, just log them
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                // Only redirect on auth API errors
+                if (error.message && error.message.includes('fetch')) {
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Initialize dashboard after authentication
+        function initializeDashboard() {
+            // Prevent multiple initializations
+            if (isDashboardInitialized) {
+                console.log('Dashboard already initialized');
+                return;
+            }
+            
+            console.log('Initializing dashboard...');
+            isDashboardInitialized = true;
+            
+            loadConfig();
+            updateSyncModeDescription(); // Initialize sync mode description
+            initChart();
+            startAutoRefresh();
+        }
+
+        // Password match validation
+        function validatePasswords() {
+            const password = document.getElementById('setup-password-home').value;
+            const confirmPassword = document.getElementById('setup-confirm-password-home').value;
+            const message = document.getElementById('password-match-message');
+            
+            if (confirmPassword.length === 0) {
+                message.classList.add('hidden');
+                return null;
+            }
+            
+            if (password === confirmPassword) {
+                message.textContent = '✓ Passwords match';
+                message.className = 'text-green-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return true;
+            } else {
+                message.textContent = '✗ Passwords do not match';
+                message.className = 'text-red-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        // Add real-time password validation
+        document.getElementById('setup-password-home').addEventListener('input', validatePasswords);
+        document.getElementById('setup-confirm-password-home').addEventListener('input', validatePasswords);
+
+        // Setup form submission (home page)
+        document.getElementById('setup-form-home').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('setup-email-home').value;
+            const password = document.getElementById('setup-password-home').value;
+            const confirmPassword = document.getElementById('setup-confirm-password-home').value;
+            
+            // Hide previous errors
+            document.getElementById('setup-error').classList.add('hidden');
+            
+            // Validate passwords match
+            if (password !== confirmPassword) {
+                document.getElementById('setup-error-text').textContent = 'Passwords do not match';
+                document.getElementById('setup-error').classList.remove('hidden');
+                return;
+            }
+            
+            // Validate password length
+            if (password.length < 6) {
+                document.getElementById('setup-error-text').textContent = 'Password must be at least 6 characters long';
+                document.getElementById('setup-error').classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Hide modal and redirect to login
+                    document.getElementById('setup-modal').classList.add('hidden');
+                    alert('Account created successfully! Please sign in.');
+                    window.location.href = '/login';
+                } else {
+                    // Show error
+                    document.getElementById('setup-error-text').textContent = data.message || 'Failed to create account';
+                    document.getElementById('setup-error').classList.remove('hidden');
+                }
+            } catch (error) {
+                document.getElementById('setup-error-text').textContent = 'Network error: ' + error.message;
+                document.getElementById('setup-error').classList.remove('hidden');
+            }
+        });
+
+        // Logout function
+        async function logout() {
+            try {
+                const response = await fetch('/api/auth/logout', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        }
+
+        // Load user profile
+        async function loadProfile() {
+            try {
+                const response = await fetch('/api/profile/me');
+                
+                if (response.status === 401) {
+                    return;
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    document.getElementById('profile-email').textContent = result.data.email;
+                    const createdDate = new Date(result.data.created_at).toLocaleDateString();
+                    document.getElementById('profile-created').textContent = createdDate;
+                }
+            } catch (error) {
+                console.error('Failed to load profile:', error);
+            }
+        }
+
+        // Password match validation for profile
+        function validateProfilePasswords() {
+            const newPassword = document.getElementById('password-new').value;
+            const confirmPassword = document.getElementById('password-confirm').value;
+            const message = document.getElementById('password-match-profile');
+            
+            if (confirmPassword.length === 0) {
+                message.classList.add('hidden');
+                return null;
+            }
+            
+            if (newPassword === confirmPassword) {
+                message.textContent = '✓ Passwords match';
+                message.className = 'text-green-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return true;
+            } else {
+                message.textContent = '✗ Passwords do not match';
+                message.className = 'text-red-400 text-xs mt-2';
+                message.classList.remove('hidden');
+                return false;
+            }
+        }
+
+        // Real-time password validation for profile
+        document.getElementById('password-new').addEventListener('input', validateProfilePasswords);
+        document.getElementById('password-confirm').addEventListener('input', validateProfilePasswords);
+
+        // Update email form submission
+        document.getElementById('update-email-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const newEmail = document.getElementById('new-email').value;
+            const currentPassword = document.getElementById('email-current-password').value;
+            const messageDiv = document.getElementById('email-message');
+            
+            messageDiv.classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/profile/update-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_email: newEmail, current_password: currentPassword })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    messageDiv.className = 'bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl mb-4 flex items-center gap-2';
+                    messageDiv.innerHTML = '<span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span><span>' + data.message + '</span>';
+                    messageDiv.classList.remove('hidden');
+                    
+                    // Reload profile
+                    loadProfile();
+                    
+                    // Clear form
+                    document.getElementById('update-email-form').reset();
+                } else {
+                    messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4 flex items-center gap-2';
+                    messageDiv.innerHTML = '<span class="iconify" data-icon="solar:danger-circle-bold" data-width="20"></span><span>' + data.message + '</span>';
+                    messageDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4';
+                messageDiv.textContent = 'Network error: ' + error.message;
+                messageDiv.classList.remove('hidden');
+            }
+        });
+
+        // Update password form submission
+        document.getElementById('update-password-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const currentPassword = document.getElementById('password-current').value;
+            const newPassword = document.getElementById('password-new').value;
+            const confirmPassword = document.getElementById('password-confirm').value;
+            const messageDiv = document.getElementById('password-message');
+            
+            messageDiv.classList.add('hidden');
+            
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4';
+                messageDiv.textContent = 'New passwords do not match';
+                messageDiv.classList.remove('hidden');
+                return;
+            }
+            
+            // Validate password length
+            if (newPassword.length < 6) {
+                messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4';
+                messageDiv.textContent = 'New password must be at least 6 characters long';
+                messageDiv.classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/profile/update-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    messageDiv.className = 'bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-xl mb-4 flex items-center gap-2';
+                    messageDiv.innerHTML = '<span class="iconify" data-icon="solar:check-circle-bold" data-width="20"></span><span>' + data.message + '</span>';
+                    messageDiv.classList.remove('hidden');
+                    
+                    // Clear form
+                    document.getElementById('update-password-form').reset();
+                    document.getElementById('password-match-profile').classList.add('hidden');
+                } else {
+                    messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4 flex items-center gap-2';
+                    messageDiv.innerHTML = '<span class="iconify" data-icon="solar:danger-circle-bold" data-width="20"></span><span>' + data.message + '</span>';
+                    messageDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                messageDiv.className = 'bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl mb-4';
+                messageDiv.textContent = 'Network error: ' + error.message;
+                messageDiv.classList.remove('hidden');
+            }
+        });
+
+        // Load profile when showing profile section
+        document.getElementById('nav-profile').addEventListener('click', () => {
+            loadProfile();
+        });
+
+        // Check authentication on page load
+        checkAuth();
     </script>
 </body>
 </html>

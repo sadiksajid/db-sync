@@ -742,6 +742,74 @@ pub async fn run_full_sync_for_ui(state: web::state::AppState) -> Result<()> {
     Ok(())
 }
 
+/// Run initial sync only (schema + data) for UI
+pub async fn run_initial_only_for_ui(state: web::state::AppState) -> Result<()> {
+    use chrono::Utc;
+    
+    // Load config from environment
+    let config = match Config::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            state.add_log(format!("Configuration error: {}", e)).await;
+            return Err(e.into());
+        }
+    };
+    
+    state.add_log("Starting initial synchronization (schema + data)...".to_string()).await;
+    
+    // Mark start time
+    {
+        let mut stats = state.stats.write().await;
+        stats.start_time = Some(Utc::now().to_rfc3339());
+    }
+    
+    // Run initial sync
+    match run_initial_sync_with_ui(&config, state.clone()).await {
+        Ok(_) => {
+            state.add_log("✓ Initial sync completed successfully".to_string()).await;
+            state.add_log("Synchronization completed".to_string()).await;
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("❌ Initial sync failed: {}", e);
+            state.add_log(msg.clone()).await;
+            Err(e)
+        }
+    }
+}
+
+/// Run real-time sync only (binlog monitoring) for UI
+pub async fn run_realtime_only_for_ui(state: web::state::AppState) -> Result<()> {
+    use chrono::Utc;
+    
+    // Load config from environment
+    let config = match Config::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            state.add_log(format!("Configuration error: {}", e)).await;
+            return Err(e.into());
+        }
+    };
+    
+    state.add_log("Starting real-time synchronization (binlog monitoring)...".to_string()).await;
+    
+    // Mark start time
+    {
+        let mut stats = state.stats.write().await;
+        stats.start_time = Some(Utc::now().to_rfc3339());
+    }
+    
+    // Run real-time sync
+    if let Err(e) = run_realtime_sync_for_ui(&config, state.clone()).await {
+        let msg = format!("Real-time sync failed: {}", e);
+        state.add_log(msg.clone()).await;
+        return Err(e);
+    }
+    
+    state.add_log("Real-time synchronization completed".to_string()).await;
+    Ok(())
+}
+
 /// Run real-time sync with UI state updates
 async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
@@ -756,7 +824,7 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
     
     // Initialize stats logger
-    let stats_logger = Arc::new(StatsLogger::new("sync_stats.json"));
+    let stats_logger = Arc::new(StatsLogger::new("sync_operations_stats.json"));
     
     state.add_log("Starting change monitoring...".to_string()).await;
     
@@ -808,16 +876,29 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
             state_writer.add_log(format!("🔄 {} → {} ({})", operation_type, table_name, details)).await;
             
             // Process event
-            match pg_writer.handle_event(event).await {
+            let success = match pg_writer.handle_event(event).await {
                 Ok(_) => {
                     // Success - log already added above
+                    true
                 }
                 Err(e) => {
                     error!("Event #{} failed: {}", event_count, e);
                     let mut stats = state_writer.stats.write().await;
                     stats.errors_count += 1;
                     state_writer.add_log(format!("  ❌ Error: {}", e)).await;
+                    false
                 }
+            };
+            
+            // Save operation stat to database
+            let timestamp = Utc::now().to_rfc3339();
+            if let Err(e) = state_writer.config_store.save_operation_stat(
+                &timestamp,
+                operation_type,
+                &table_name,
+                success,
+            ).await {
+                error!("Failed to save operation stat: {}", e);
             }
             
             // Update last sync time
@@ -829,7 +910,7 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
     // Start binlog streaming in a separate task
     let state_reader = state.clone();
     let reader_handle = tokio::spawn(async move {
-        state_reader.add_log("Change monitor running - watching for database changes...".to_string()).await;
+        state_reader.add_log("Initializing change monitor...".to_string()).await;
         
         if let Err(e) = binlog_reader.start_streaming().await {
             error!("Change monitoring error: {}", e);
@@ -838,6 +919,10 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
             state_reader.add_log("Change monitor stopped".to_string()).await;
         }
     });
+    
+    // Give the reader time to initialize and truncate general_log
+    state.add_log("⏳ Waiting for change monitor to initialize...".to_string()).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     
     state.add_log("✓ Real-time sync is now active and monitoring changes".to_string()).await;
     state.add_log("📊 Make changes in MySQL to see them replicated to PostgreSQL".to_string()).await;
