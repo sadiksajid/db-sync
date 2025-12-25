@@ -2,36 +2,128 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
+/// Slave database configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlaveConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
-    // MySQL Configuration
-    pub db_host: String,
-    pub db_port: u16,
-    pub db_database: String,
-    pub db_username: String,
-    pub db_password: String,
+    // Database Type Configuration (mysql or postgresql)
+    #[serde(default = "default_db_type")]
+    pub db_type: String,
     
-    // PostgreSQL Configuration
+    // Source Database Configuration (Master)
+    #[serde(default)]
+    pub source_db_host: String,
+    #[serde(default = "default_db_port")]
+    pub source_db_port: u16,
+    #[serde(default)]
+    pub source_db_database: String,
+    #[serde(default)]
+    pub source_db_username: String,
+    #[serde(default)]
+    pub source_db_password: String,
+    
+    // Target Database Configuration (Primary Slave - for backward compatibility)
+    #[serde(default)]
+    pub target_db_host: String,
+    #[serde(default = "default_db_port")]
+    pub target_db_port: u16,
+    #[serde(default)]
+    pub target_db_database: String,
+    #[serde(default)]
+    pub target_db_username: String,
+    #[serde(default)]
+    pub target_db_password: String,
+    
+    // Multiple Slave Databases (for parallel sync)
+    #[serde(default)]
+    pub slaves: Vec<SlaveConfig>,
+    
+    // OLD field names for backward compatibility (will be removed)
+    #[serde(default, skip_serializing)]
+    pub db_host: String,
+    #[serde(default, skip_serializing)]
+    pub db_port: u16,
+    #[serde(default, skip_serializing)]
+    pub db_database: String,
+    #[serde(default, skip_serializing)]
+    pub db_username: String,
+    #[serde(default, skip_serializing)]
+    pub db_password: String,
+    #[serde(default, skip_serializing)]
     pub psql_db_host: String,
+    #[serde(default, skip_serializing)]
     pub psql_db_port: u16,
+    #[serde(default, skip_serializing)]
     pub psql_db_database: String,
+    #[serde(default, skip_serializing)]
     pub psql_db_username: String,
+    #[serde(default, skip_serializing)]
     pub psql_db_password: String,
     
     // Sync Configuration
+    #[serde(default = "default_batch_size")]
     pub batch_size: usize,
+    #[serde(default = "default_poll_interval")]
     pub poll_interval_secs: u64,
+    #[serde(default = "default_sync_mode")]
     pub sync_mode: String,
+    #[serde(default)]
+    pub reset_database: bool,  // Drop and recreate databases before sync
     
     // Gemini API Configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gemini_api_key: Option<String>,
+    #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
+}
+
+fn default_db_type() -> String {
+    "mysql".to_string()
+}
+
+fn default_db_port() -> u16 {
+    3306  // Default, will change based on db_type
+}
+
+fn default_batch_size() -> usize {
+    100
+}
+
+fn default_poll_interval() -> u64 {
+    10
+}
+
+fn default_sync_mode() -> String {
+    "full-sync".to_string()
+}
+
+fn default_gemini_model() -> String {
+    "gemini-2.0-flash-exp".to_string()
 }
 
 impl Default for SyncConfig {
     fn default() -> Self {
         Self {
+            db_type: "mysql".to_string(),
+            source_db_host: String::new(),
+            source_db_port: 3306,
+            source_db_database: String::new(),
+            source_db_username: String::new(),
+            source_db_password: String::new(),
+            target_db_host: String::new(),
+            target_db_port: 3306,
+            target_db_database: String::new(),
+            target_db_username: String::new(),
+            target_db_password: String::new(),
+            // Old fields for backward compatibility
             db_host: String::new(),
             db_port: 3306,
             db_database: String::new(),
@@ -45,9 +137,231 @@ impl Default for SyncConfig {
             batch_size: 100,
             poll_interval_secs: 10,
             sync_mode: "full-sync".to_string(),
+            reset_database: false,
             gemini_api_key: None,
             gemini_model: "gemini-2.0-flash-exp".to_string(),
+            slaves: Vec::new(),
         }
+    }
+}
+
+impl SyncConfig {
+    /// Convert web SyncConfig to main Config struct (bypassing environment variables!)
+    pub fn to_main_config(&self) -> anyhow::Result<crate::config::Config> {
+        use crate::config::{Config, DatabaseType, SyncMode};
+        
+        // Validate required fields
+        if self.source_db_host.is_empty() {
+            return Err(anyhow::anyhow!("Source database host is required"));
+        }
+        if self.source_db_database.is_empty() {
+            return Err(anyhow::anyhow!("Source database name is required"));
+        }
+        if self.target_db_host.is_empty() {
+            return Err(anyhow::anyhow!("Target database host is required"));
+        }
+        if self.target_db_database.is_empty() {
+            return Err(anyhow::anyhow!("Target database name is required"));
+        }
+        
+        // Determine database type
+        let db_type = DatabaseType::from_str(&self.db_type)
+            .ok_or_else(|| anyhow::anyhow!("Invalid database type: {}", self.db_type))?;
+        
+        // Build database URLs
+        let source_url = match db_type {
+            DatabaseType::MySQL => format!(
+                "mysql://{}:{}@{}:{}/{}",
+                self.source_db_username,
+                self.source_db_password,
+                self.source_db_host,
+                self.source_db_port,
+                self.source_db_database
+            ),
+            DatabaseType::PostgreSQL => format!(
+                "postgresql://{}:{}@{}:{}/{}",
+                self.source_db_username,
+                self.source_db_password,
+                self.source_db_host,
+                self.source_db_port,
+                self.source_db_database
+            ),
+        };
+        
+        let target_url = match db_type {
+            DatabaseType::MySQL => format!(
+                "mysql://{}:{}@{}:{}/{}",
+                self.target_db_username,
+                self.target_db_password,
+                self.target_db_host,
+                self.target_db_port,
+                self.target_db_database
+            ),
+            DatabaseType::PostgreSQL => format!(
+                "postgresql://{}:{}@{}:{}/{}",
+                self.target_db_username,
+                self.target_db_password,
+                self.target_db_host,
+                self.target_db_port,
+                self.target_db_database
+            ),
+        };
+        
+        // Determine sync mode
+        let sync_mode = SyncMode::from_str(&self.sync_mode)
+            .unwrap_or(SyncMode::Both);
+        
+        Ok(Config {
+            source_url,
+            target_url,
+            source_type: db_type.clone(),
+            target_type: db_type,  // Same type for same-type sync
+            sync_mode,
+            batch_size: self.batch_size,
+            source_database: self.source_db_database.clone(),
+            target_database: self.target_db_database.clone(),
+            // Connection details for display/logging and mysqldump
+            source_host: self.source_db_host.clone(),
+            source_port: self.source_db_port,
+            source_username: self.source_db_username.clone(),
+            source_password: self.source_db_password.clone(),
+            target_host: self.target_db_host.clone(),
+            target_port: self.target_db_port,
+            target_username: self.target_db_username.clone(),
+            target_password: self.target_db_password.clone(),
+        })
+    }
+    
+    /// Create Config objects for all slave databases (for parallel sync)
+    pub fn to_slave_configs(&self) -> anyhow::Result<Vec<crate::config::Config>> {
+        use crate::config::{Config, DatabaseType, SyncMode};
+        
+        // Validate source fields
+        if self.source_db_host.is_empty() {
+            return Err(anyhow::anyhow!("Source database host is required"));
+        }
+        if self.source_db_database.is_empty() {
+            return Err(anyhow::anyhow!("Source database name is required"));
+        }
+        
+        // Determine database type
+        let db_type = DatabaseType::from_str(&self.db_type)
+            .ok_or_else(|| anyhow::anyhow!("Invalid database type: {}", self.db_type))?;
+        
+        // Build source URL (same for all slaves)
+        let source_url = match db_type {
+            DatabaseType::MySQL => format!(
+                "mysql://{}:{}@{}:{}/{}",
+                self.source_db_username,
+                self.source_db_password,
+                self.source_db_host,
+                self.source_db_port,
+                self.source_db_database
+            ),
+            DatabaseType::PostgreSQL => format!(
+                "postgresql://{}:{}@{}:{}/{}",
+                self.source_db_username,
+                self.source_db_password,
+                self.source_db_host,
+                self.source_db_port,
+                self.source_db_database
+            ),
+        };
+        
+        // Determine sync mode
+        let sync_mode = SyncMode::from_str(&self.sync_mode)
+            .unwrap_or(SyncMode::Both);
+        
+        let mut configs = Vec::new();
+        
+        // If no slaves configured, use primary target for backward compatibility
+        if self.slaves.is_empty() && !self.target_db_host.is_empty() && !self.target_db_database.is_empty() {
+            let target_url = match db_type {
+                DatabaseType::MySQL => format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    self.target_db_username,
+                    self.target_db_password,
+                    self.target_db_host,
+                    self.target_db_port,
+                    self.target_db_database
+                ),
+                DatabaseType::PostgreSQL => format!(
+                    "postgresql://{}:{}@{}:{}/{}",
+                    self.target_db_username,
+                    self.target_db_password,
+                    self.target_db_host,
+                    self.target_db_port,
+                    self.target_db_database
+                ),
+            };
+            
+            configs.push(Config {
+                source_url: source_url.clone(),
+                target_url,
+                source_type: db_type.clone(),
+                target_type: db_type.clone(),
+                sync_mode: sync_mode.clone(),
+                batch_size: self.batch_size,
+                source_database: self.source_db_database.clone(),
+                target_database: self.target_db_database.clone(),
+                source_host: self.source_db_host.clone(),
+                source_port: self.source_db_port,
+                source_username: self.source_db_username.clone(),
+                source_password: self.source_db_password.clone(),
+                target_host: self.target_db_host.clone(),
+                target_port: self.target_db_port,
+                target_username: self.target_db_username.clone(),
+                target_password: self.target_db_password.clone(),
+            });
+        }
+        // Otherwise, ONLY use slaves array (don't duplicate with primary target)
+        else {
+            for slave in &self.slaves {
+            let target_url = match db_type {
+                DatabaseType::MySQL => format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    slave.username,
+                    slave.password,
+                    slave.host,
+                    slave.port,
+                    slave.database
+                ),
+                DatabaseType::PostgreSQL => format!(
+                    "postgresql://{}:{}@{}:{}/{}",
+                    slave.username,
+                    slave.password,
+                    slave.host,
+                    slave.port,
+                    slave.database
+                ),
+            };
+            
+            configs.push(Config {
+                source_url: source_url.clone(),
+                target_url,
+                source_type: db_type.clone(),
+                target_type: db_type.clone(),
+                sync_mode: sync_mode.clone(),
+                batch_size: self.batch_size,
+                source_database: self.source_db_database.clone(),
+                target_database: slave.database.clone(),
+                source_host: self.source_db_host.clone(),
+                source_port: self.source_db_port,
+                source_username: self.source_db_username.clone(),
+                source_password: self.source_db_password.clone(),
+                target_host: slave.host.clone(),
+                target_port: slave.port,
+                target_username: slave.username.clone(),
+                target_password: slave.password.clone(),
+            });
+            }
+        }
+        
+        if configs.is_empty() {
+            return Err(anyhow::anyhow!("No slave databases configured"));
+        }
+        
+        Ok(configs)
     }
 }
 

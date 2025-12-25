@@ -38,11 +38,11 @@ pub struct Index {
 }
 
 #[derive(Debug, Clone)]
-pub struct MySQLSchema {
+pub struct DatabaseSchema {
     pub tables: HashMap<String, TableSchema>,
 }
 
-impl MySQLSchema {
+impl DatabaseSchema {
     pub fn new() -> Self {
         Self {
             tables: HashMap::new(),
@@ -57,4 +57,7 @@ impl MySQLSchema {
         self.tables.get(name)
     }
 }
+
+// Keep backward compatibility alias
+pub type MySQLSchema = DatabaseSchema;
 

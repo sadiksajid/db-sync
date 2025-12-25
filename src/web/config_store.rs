@@ -40,6 +40,7 @@ impl ConfigStore {
             r#"
             CREATE TABLE IF NOT EXISTS config (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                db_type TEXT NOT NULL DEFAULT 'mysql',
                 db_host TEXT NOT NULL,
                 db_port INTEGER NOT NULL,
                 db_database TEXT NOT NULL,
@@ -62,6 +63,26 @@ impl ConfigStore {
         )
         .execute(&pool)
         .await?;
+        
+        // Migrate existing tables: Add db_type column if it doesn't exist
+        sqlx::query(
+            r#"
+            ALTER TABLE config ADD COLUMN db_type TEXT NOT NULL DEFAULT 'mysql'
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .ok(); // Ignore error if column already exists
+        
+        // Migrate existing tables: Add reset_database column if it doesn't exist
+        sqlx::query(
+            r#"
+            ALTER TABLE config ADD COLUMN reset_database INTEGER NOT NULL DEFAULT 0
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .ok(); // Ignore error if column already exists
 
         // Create users table if it doesn't exist
         sqlx::query(
@@ -102,6 +123,24 @@ impl ConfigStore {
         .execute(&pool)
         .await; // Ignore errors - column might already exist
 
+        // Create slaves table for multiple slave databases
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS slaves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                database TEXT NOT NULL,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(host, port, database)
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await?;
+
         // Create operation_stats table for live sync statistics
         sqlx::query(
             r#"
@@ -135,51 +174,104 @@ impl ConfigStore {
 
     /// Save configuration to database
     pub async fn save_config(&self, config: &SyncConfig) -> Result<()> {
+        // Map new field names to old database columns for backward compatibility
+        // source_db_* → db_* columns
+        // target_db_* → psql_db_* columns
         sqlx::query(
             r#"
             INSERT INTO config (
-                id, db_host, db_port, db_database, db_username, db_password,
+                id, db_type, db_host, db_port, db_database, db_username, db_password,
                 psql_db_host, psql_db_port, psql_db_database, psql_db_username, psql_db_password,
-                batch_size, poll_interval_secs, sync_mode, gemini_api_key, gemini_model, updated_at
-            ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, CURRENT_TIMESTAMP)
+                batch_size, poll_interval_secs, sync_mode, reset_database, gemini_api_key, gemini_model, updated_at
+            ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
-                db_host = ?1,
-                db_port = ?2,
-                db_database = ?3,
-                db_username = ?4,
-                db_password = ?5,
-                psql_db_host = ?6,
-                psql_db_port = ?7,
-                psql_db_database = ?8,
-                psql_db_username = ?9,
-                psql_db_password = ?10,
-                batch_size = ?11,
-                poll_interval_secs = ?12,
-                sync_mode = ?13,
-                gemini_api_key = ?14,
-                gemini_model = ?15,
+                db_type = ?1,
+                db_host = ?2,
+                db_port = ?3,
+                db_database = ?4,
+                db_username = ?5,
+                db_password = ?6,
+                psql_db_host = ?7,
+                psql_db_port = ?8,
+                psql_db_database = ?9,
+                psql_db_username = ?10,
+                psql_db_password = ?11,
+                batch_size = ?12,
+                poll_interval_secs = ?13,
+                sync_mode = ?14,
+                reset_database = ?15,
+                gemini_api_key = ?16,
+                gemini_model = ?17,
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
-        .bind(&config.db_host)
-        .bind(config.db_port as i64)
-        .bind(&config.db_database)
-        .bind(&config.db_username)
-        .bind(&config.db_password)
-        .bind(&config.psql_db_host)
-        .bind(config.psql_db_port as i64)
-        .bind(&config.psql_db_database)
-        .bind(&config.psql_db_username)
-        .bind(&config.psql_db_password)
+        .bind(&config.db_type)
+        .bind(&config.source_db_host)         // NEW: source_db_* → db_* columns
+        .bind(config.source_db_port as i64)
+        .bind(&config.source_db_database)
+        .bind(&config.source_db_username)
+        .bind(&config.source_db_password)
+        .bind(&config.target_db_host)         // NEW: target_db_* → psql_db_* columns
+        .bind(config.target_db_port as i64)
+        .bind(&config.target_db_database)
+        .bind(&config.target_db_username)
+        .bind(&config.target_db_password)
         .bind(config.batch_size as i64)
         .bind(config.poll_interval_secs as i64)
         .bind(&config.sync_mode)
+        .bind(config.reset_database as i64)  // Boolean as integer (0 or 1)
         .bind(&config.gemini_api_key)
         .bind(&config.gemini_model)
         .execute(&self.pool)
         .await?;
 
-        info!("✅ Configuration saved to database");
+        // Save slaves to slaves table
+        // First, clear existing slaves
+        sqlx::query("DELETE FROM slaves")
+            .execute(&self.pool)
+            .await?;
+        
+        // Remove duplicates: track unique host:port:database combinations
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        let mut unique_slaves = Vec::new();
+        
+        for slave in &config.slaves {
+            let key = format!("{}:{}:{}", slave.host, slave.port, slave.database);
+            if seen.insert(key) {
+                unique_slaves.push(slave);
+            } else {
+                info!("⚠️  Skipping duplicate slave: {}@{}:{}/{}", 
+                    slave.username, slave.host, slave.port, slave.database);
+            }
+        }
+        
+        // Then insert unique slaves only
+        let saved_count = unique_slaves.len();
+        
+        for slave in &unique_slaves {
+            sqlx::query(
+                r#"
+                INSERT INTO slaves (host, port, database, username, password)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                "#,
+            )
+            .bind(&slave.host)
+            .bind(slave.port as i64)
+            .bind(&slave.database)
+            .bind(&slave.username)
+            .bind(&slave.password)
+            .execute(&self.pool)
+            .await?;
+        }
+        let duplicate_count = config.slaves.len() - saved_count;
+        
+        if duplicate_count > 0 {
+            info!("✅ Configuration saved to database ({} unique slave(s), {} duplicate(s) removed)", 
+                saved_count, duplicate_count);
+        } else {
+            info!("✅ Configuration saved to database (including {} slave(s))", saved_count);
+        }
         Ok(())
     }
 
@@ -188,9 +280,11 @@ impl ConfigStore {
         let result = sqlx::query_as::<_, ConfigRow>(
             r#"
             SELECT 
-                db_host, db_port, db_database, db_username, db_password,
+                db_type, db_host, db_port, db_database, db_username, db_password,
                 psql_db_host, psql_db_port, psql_db_database, psql_db_username, psql_db_password,
-                batch_size, poll_interval_secs, sync_mode, gemini_api_key, gemini_model
+                batch_size, poll_interval_secs, sync_mode, 
+                COALESCE(reset_database, 0) as reset_database, 
+                gemini_api_key, gemini_model
             FROM config
             WHERE id = 1
             "#,
@@ -200,8 +294,42 @@ impl ConfigStore {
 
         match result {
             Some(row) => {
-                info!("✅ Configuration loaded from database");
+                // Load slaves from slaves table
+                let slaves_result = sqlx::query_as::<_, SlaveRow>(
+                    r#"
+                    SELECT host, port, database, username, password
+                    FROM slaves
+                    ORDER BY id
+                    "#,
+                )
+                .fetch_all(&self.pool)
+                .await?;
+                
+                let slaves: Vec<super::state::SlaveConfig> = slaves_result.into_iter().map(|s| super::state::SlaveConfig {
+                    host: s.host,
+                    port: s.port as u16,
+                    database: s.database,
+                    username: s.username,
+                    password: s.password,
+                }).collect();
+                
+                info!("✅ Configuration loaded from database (with {} slave(s))", slaves.len());
+                // Map old database columns to new field names
+                // db_* columns → source_db_*
+                // psql_db_* columns → target_db_*
                 Ok(Some(SyncConfig {
+                    db_type: row.db_type,
+                    source_db_host: row.db_host.clone(),            // NEW: db_* → source_db_*
+                    source_db_port: row.db_port as u16,
+                    source_db_database: row.db_database.clone(),
+                    source_db_username: row.db_username.clone(),
+                    source_db_password: row.db_password.clone(),
+                    target_db_host: row.psql_db_host.clone(),       // NEW: psql_db_* → target_db_*
+                    target_db_port: row.psql_db_port as u16,
+                    target_db_database: row.psql_db_database.clone(),
+                    target_db_username: row.psql_db_username.clone(),
+                    target_db_password: row.psql_db_password.clone(),
+                    // Keep old fields for backward compatibility
                     db_host: row.db_host,
                     db_port: row.db_port as u16,
                     db_database: row.db_database,
@@ -215,8 +343,10 @@ impl ConfigStore {
                     batch_size: row.batch_size as usize,
                     poll_interval_secs: row.poll_interval_secs as u64,
                     sync_mode: row.sync_mode,
+                    reset_database: row.reset_database != 0,  // Convert i64 to bool
                     gemini_api_key: row.gemini_api_key,
                     gemini_model: row.gemini_model,
+                    slaves,
                 }))
             }
             None => {
@@ -490,6 +620,7 @@ impl ConfigStore {
 
 #[derive(Debug, sqlx::FromRow)]
 struct ConfigRow {
+    db_type: String,
     db_host: String,
     db_port: i64,
     db_database: String,
@@ -503,8 +634,18 @@ struct ConfigRow {
     batch_size: i64,
     poll_interval_secs: i64,
     sync_mode: String,
+    reset_database: i64,  // Boolean stored as integer (0 or 1)
     gemini_api_key: Option<String>,
     gemini_model: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SlaveRow {
+    host: String,
+    port: i64,
+    database: String,
+    username: String,
+    password: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

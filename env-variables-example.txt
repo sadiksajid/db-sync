@@ -1,0 +1,60 @@
+# DB Sync Proxy - Environment Variables Example
+# Use these variables when running with Docker Compose or CLI
+
+# Database Types (both must be the same)
+SOURCE_DB_TYPE=mysql          # Options: mysql, postgresql
+TARGET_DB_TYPE=mysql          # Must match SOURCE_DB_TYPE
+
+# Source Database Configuration
+SOURCE_DB_HOST=host.docker.internal  # Use host.docker.internal for Docker to access host
+SOURCE_DB_PORT=3306                   # MySQL: 3306, PostgreSQL: 5432
+SOURCE_DB_DATABASE=sourcedb
+SOURCE_DB_USERNAME=root
+SOURCE_DB_PASSWORD=password
+
+# Target Database Configuration
+TARGET_DB_HOST=host.docker.internal
+TARGET_DB_PORT=3307                   # Use different port if same host
+TARGET_DB_DATABASE=targetdb
+TARGET_DB_USERNAME=root
+TARGET_DB_PASSWORD=password
+
+# Sync Configuration
+SYNC_MODE=initial                     # Options: initial, realtime (MySQL only), both (MySQL only)
+BATCH_SIZE=1000                       # Number of rows per batch
+RUST_LOG=info                         # Log level: debug, info, warn, error
+
+# Examples for Different Setups:
+
+# === MySQL to MySQL (Same Server, Different Databases) ===
+# SOURCE_DB_TYPE=mysql
+# TARGET_DB_TYPE=mysql
+# SOURCE_DB_HOST=localhost
+# SOURCE_DB_PORT=3306
+# SOURCE_DB_DATABASE=source_db
+# TARGET_DB_HOST=localhost
+# TARGET_DB_PORT=3306
+# TARGET_DB_DATABASE=target_db
+
+# === MySQL to MySQL (Different Servers) ===
+# SOURCE_DB_TYPE=mysql
+# TARGET_DB_TYPE=mysql
+# SOURCE_DB_HOST=192.168.1.100
+# SOURCE_DB_PORT=3306
+# SOURCE_DB_DATABASE=source_db
+# TARGET_DB_HOST=192.168.1.101
+# TARGET_DB_PORT=3306
+# TARGET_DB_DATABASE=target_db
+
+# === PostgreSQL to PostgreSQL ===
+# SOURCE_DB_TYPE=postgresql
+# TARGET_DB_TYPE=postgresql
+# SOURCE_DB_HOST=localhost
+# SOURCE_DB_PORT=5432
+# SOURCE_DB_DATABASE=source_db
+# SOURCE_DB_USERNAME=postgres
+# TARGET_DB_HOST=localhost
+# TARGET_DB_PORT=5433
+# TARGET_DB_DATABASE=target_db
+# TARGET_DB_USERNAME=postgres
+

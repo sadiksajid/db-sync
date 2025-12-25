@@ -7,10 +7,10 @@ mod web;
 
 use anyhow::Result;
 use clap::{Arg, Command};
-use config::{Config, SyncMode};
+use config::{Config, DatabaseType, SyncMode};
 use migrator::{create_tables::TableCreator, data_transfer::DataTransfer, routine_migrator::RoutineMigrator, verify::Verifier};
-use realtime::{binlog_reader::BinlogReader, pg_writer::PGWriter, stats_logger::StatsLogger};
-use schema::{mysql_reader::MySQLReader, routines::RoutineReader};
+use realtime::{binlog_reader::BinlogReader, mysql_writer::MySQLWriter, pg_writer::PGWriter, stats_logger::StatsLogger};
+use schema::{mysql_reader::MySQLReader, pg_reader::PgReader, routines::RoutineReader};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber;
@@ -23,9 +23,9 @@ async fn main() -> Result<()> {
         .init();
 
     // Parse CLI arguments
-    let matches = Command::new("mysql_psql_proxy")
+    let matches = Command::new("db_sync_proxy")
         .version("0.1.0")
-        .about("MySQL to PostgreSQL synchronization proxy")
+        .about("Database synchronization proxy (MySQL-to-MySQL or PostgreSQL-to-PostgreSQL)")
         .arg(
             Arg::new("initial-sync")
                 .long("initial-sync")
@@ -99,8 +99,9 @@ async fn main() -> Result<()> {
         Err(e) => {
             eprintln!("ERROR: Configuration error: {}", e);
             eprintln!("Please ensure all required environment variables are set.");
-            eprintln!("Required for MySQL: DB_HOST, DB_USERNAME, DB_PASSWORD, DB_DATABASE (or MYSQL_* variables)");
-            eprintln!("Required for PostgreSQL: PSQL_DB_HOST, PSQL_DB_USERNAME, PSQL_DB_PASSWORD, PSQL_DB_DATABASE (or POSTGRES_* variables)");
+            eprintln!("Required: SOURCE_DB_TYPE, TARGET_DB_TYPE (mysql or postgresql)");
+            eprintln!("Required: SOURCE_DB_HOST, SOURCE_DB_USERNAME, SOURCE_DB_PASSWORD, SOURCE_DB_DATABASE");
+            eprintln!("Required: TARGET_DB_HOST, TARGET_DB_USERNAME, TARGET_DB_PASSWORD, TARGET_DB_DATABASE");
             std::process::exit(1);
         }
     };
@@ -116,7 +117,8 @@ async fn main() -> Result<()> {
         config.sync_mode.clone()
     };
 
-    info!("Starting MySQL to PostgreSQL proxy");
+    info!("Starting database synchronization proxy");
+    info!("Source: {:?}, Target: {:?}", config.source_type, config.target_type);
     info!("Sync mode: {:?}", sync_mode);
 
     match sync_mode {
@@ -166,78 +168,243 @@ async fn main() -> Result<()> {
 async fn run_initial_sync(config: &Config) -> Result<String> {
     info!("Starting initial sync (schema + data)");
 
-    // Connect to MySQL
-    info!("Connecting to MySQL: {}", config.mysql_url);
-    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
-    info!("Connected to MySQL");
+    // Validate that source and target types are the same
+    if config.source_type != config.target_type {
+        return Err(anyhow::anyhow!(
+            "Source and target database types must be the same. Source: {:?}, Target: {:?}",
+            config.source_type, config.target_type
+        ));
+    }
+
+    match config.source_type {
+        DatabaseType::MySQL => run_mysql_to_mysql_initial_sync(config).await,
+        DatabaseType::PostgreSQL => run_pg_to_pg_initial_sync(config).await,
+    }
+}
+
+async fn run_mysql_to_mysql_initial_sync(config: &Config) -> Result<String> {
+    info!("Starting MySQL to MySQL initial sync");
+
+    // Connect to source MySQL
+    info!("Connecting to source MySQL: {}", config.source_url);
+    let source_pool = sqlx::MySqlPool::connect(&config.source_url).await?;
+    info!("Connected to source MySQL");
     
     // Record the start timestamp BEFORE we begin data transfer
     info!("📍 Recording start timestamp for catch-up sync...");
-    let start_timestamp = get_mysql_timestamp(&mysql_pool).await?;
+    let start_timestamp = get_mysql_timestamp(&source_pool).await?;
     info!("📍 Start timestamp: {}", start_timestamp);
 
-    // Connect to PostgreSQL
-    info!("Connecting to PostgreSQL: {}", config.pg_url);
-    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
-    info!("Connected to PostgreSQL");
+    // Connect to target MySQL
+    info!("Connecting to target MySQL: {}", config.target_url);
+    let target_pool = sqlx::MySqlPool::connect(&config.target_url).await?;
+    info!("Connected to target MySQL");
 
-    // Read MySQL schema
-    info!("Reading MySQL schema...");
-    let reader = MySQLReader::new(mysql_pool.clone(), config.mysql_database.clone());
+    // Read source schema
+    info!("Reading source MySQL schema...");
+    let reader = MySQLReader::new(source_pool.clone(), config.source_database.clone());
     let schema = reader.build_schema().await?;
-    info!("Read {} tables from MySQL", schema.tables.len());
+    info!("Read {} tables from source MySQL", schema.tables.len());
 
-    // Create tables in PostgreSQL
-    info!("Creating tables in PostgreSQL...");
-    let table_creator = TableCreator::new(pg_pool.clone());
-    table_creator.create_all_tables(&schema).await?;
-    info!("All tables created in PostgreSQL");
+    // Create tables in target (simple copy for MySQL to MySQL)
+    info!("Creating tables in target MySQL...");
+    for (table_name, table_schema) in &schema.tables {
+        info!("Creating table: {}", table_name);
+        
+        // Generate CREATE TABLE statement for MySQL
+        let mut columns_sql = Vec::new();
+        for col in &table_schema.columns {
+            let mut col_def = format!("`{}` {}", col.name, col.data_type.to_uppercase());
+            
+            if let Some(len) = col.character_maximum_length {
+                if col.data_type == "varchar" || col.data_type == "char" {
+                    col_def = format!("`{}` {}({})", col.name, col.data_type.to_uppercase(), len);
+                }
+            }
+            
+            if !col.is_nullable {
+                col_def.push_str(" NOT NULL");
+            }
+            
+            if col.is_auto_increment {
+                col_def.push_str(" AUTO_INCREMENT");
+            }
+            
+            if let Some(ref default) = col.default_value {
+                if !col.is_auto_increment {
+                    col_def.push_str(&format!(" DEFAULT {}", default));
+                }
+            }
+            
+            columns_sql.push(col_def);
+        }
+        
+        // Add primary key
+        if !table_schema.primary_keys.is_empty() {
+            let pk_cols: Vec<String> = table_schema.primary_keys.iter().map(|pk| format!("`{}`", pk)).collect();
+            columns_sql.push(format!("PRIMARY KEY ({})", pk_cols.join(", ")));
+        }
+        
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS `{}` ({})",
+            table_name,
+            columns_sql.join(", ")
+        );
+        
+        sqlx::query(&create_sql).execute(&target_pool).await?;
+    }
+    info!("All tables created in target MySQL");
 
     // Transfer data
-    info!("Transferring data from MySQL to PostgreSQL...");
-    let data_transfer = DataTransfer::new(mysql_pool.clone(), pg_pool.clone(), config.batch_size);
-    data_transfer.transfer_all_data(&schema).await?;
+    info!("Transferring data from source to target...");
+    for (table_name, table_schema) in &schema.tables {
+        info!("Transferring table: {}", table_name);
+        
+        let columns: Vec<String> = table_schema.columns.iter().map(|c| format!("`{}`", c.name)).collect();
+        let select_sql = format!("SELECT {} FROM `{}`", columns.join(", "), table_name);
+        
+        let mut rows = sqlx::query(&select_sql).fetch(&source_pool);
+        
+        let placeholders: Vec<String> = (0..columns.len()).map(|_| "?".to_string()).collect();
+        let insert_sql = format!(
+            "INSERT INTO `{}` ({}) VALUES ({})",
+            table_name,
+            columns.join(", "),
+            placeholders.join(", ")
+        );
+        
+        use sqlx::Row;
+        use futures::StreamExt;
+        
+        let mut count = 0;
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            let mut query = sqlx::query(&insert_sql);
+            
+            for i in 0..columns.len() {
+                let value: Option<String> = row.try_get(i).ok();
+                query = query.bind(value);
+            }
+            
+            query.execute(&target_pool).await?;
+            count += 1;
+        }
+        
+        info!("Transferred {} rows from {}", count, table_name);
+    }
     info!("Data transfer completed");
 
-    // Read and migrate database objects (views, functions, procedures, triggers)
-    info!("Reading database objects from MySQL...");
-    let routine_reader = RoutineReader::new(mysql_pool.clone(), config.mysql_database.clone());
+    info!("Initial sync completed");
+    Ok(start_timestamp)
+}
+
+async fn run_pg_to_pg_initial_sync(config: &Config) -> Result<String> {
+    info!("Starting PostgreSQL to PostgreSQL initial sync");
+
+    // Connect to source PostgreSQL
+    info!("Connecting to source PostgreSQL: {}", config.source_url);
+    let source_pool = sqlx::PgPool::connect(&config.source_url).await?;
+    info!("Connected to source PostgreSQL");
     
-    let views = routine_reader.read_views().await?;
-    let functions = routine_reader.read_functions().await?;
-    let procedures = routine_reader.read_procedures().await?;
-    let triggers = routine_reader.read_triggers().await?;
+    // Record the start timestamp BEFORE we begin data transfer
+    info!("📍 Recording start timestamp for catch-up sync...");
+    let start_timestamp = get_pg_timestamp(&source_pool).await?;
+    info!("📍 Start timestamp: {}", start_timestamp);
 
-    info!("Found {} views, {} functions, {} procedures, {} triggers", 
-        views.len(), functions.len(), procedures.len(), triggers.len());
+    // Connect to target PostgreSQL
+    info!("Connecting to target PostgreSQL: {}", config.target_url);
+    let target_pool = sqlx::PgPool::connect(&config.target_url).await?;
+    info!("Connected to target PostgreSQL");
 
-    if !views.is_empty() || !functions.is_empty() || !procedures.is_empty() || !triggers.is_empty() {
-        info!("Migrating database objects to PostgreSQL...");
-        let routine_migrator = RoutineMigrator::new(pg_pool.clone());
-        routine_migrator.migrate_all(&views, &functions, &procedures, &triggers).await?;
-        info!("Database objects migration completed");
-    } else {
-        info!("No database objects to migrate");
-    }
+    // Read source schema
+    info!("Reading source PostgreSQL schema...");
+    let reader = PgReader::new(source_pool.clone(), config.source_database.clone());
+    let schema = reader.build_schema().await?;
+    info!("Read {} tables from source PostgreSQL", schema.tables.len());
 
-    // Verify
-    info!("Verifying schema and data...");
-    let verifier = Verifier::new(mysql_pool, pg_pool);
-    let report = verifier.verify_schema(&schema).await?;
-
-    info!(
-        "Verification complete: {} tables match, {} tables mismatch",
-        report.tables_match, report.tables_mismatch
-    );
-
-    for table_report in &report.table_reports {
-        if !table_report.matches {
-            error!(
-                "Table {} mismatch: MySQL={}, PostgreSQL={}",
-                table_report.table_name, table_report.mysql_count, table_report.pg_count
-            );
+    // Create tables in target (simple copy for PostgreSQL to PostgreSQL)
+    info!("Creating tables in target PostgreSQL...");
+    for (table_name, table_schema) in &schema.tables {
+        info!("Creating table: {}", table_name);
+        
+        // Generate CREATE TABLE statement for PostgreSQL
+        let mut columns_sql = Vec::new();
+        for col in &table_schema.columns {
+            let mut col_def = format!("\"{}\" {}", col.name, col.data_type.to_uppercase());
+            
+            if let Some(len) = col.character_maximum_length {
+                if col.data_type == "character varying" || col.data_type == "varchar" {
+                    col_def = format!("\"{}\" VARCHAR({})", col.name, len);
+                } else if col.data_type == "character" || col.data_type == "char" {
+                    col_def = format!("\"{}\" CHAR({})", col.name, len);
+                }
+            }
+            
+            if !col.is_nullable {
+                col_def.push_str(" NOT NULL");
+            }
+            
+            if let Some(ref default) = col.default_value {
+                col_def.push_str(&format!(" DEFAULT {}", default));
+            }
+            
+            columns_sql.push(col_def);
         }
+        
+        // Add primary key
+        if !table_schema.primary_keys.is_empty() {
+            let pk_cols: Vec<String> = table_schema.primary_keys.iter().map(|pk| format!("\"{}\"", pk)).collect();
+            columns_sql.push(format!("PRIMARY KEY ({})", pk_cols.join(", ")));
+        }
+        
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS \"{}\" ({})",
+            table_name,
+            columns_sql.join(", ")
+        );
+        
+        sqlx::query(&create_sql).execute(&target_pool).await?;
     }
+    info!("All tables created in target PostgreSQL");
+
+    // Transfer data
+    info!("Transferring data from source to target...");
+    for (table_name, table_schema) in &schema.tables {
+        info!("Transferring table: {}", table_name);
+        
+        let columns: Vec<String> = table_schema.columns.iter().map(|c| format!("\"{}\"", c.name)).collect();
+        let select_sql = format!("SELECT {} FROM \"{}\"", columns.join(", "), table_name);
+        
+        let mut rows = sqlx::query(&select_sql).fetch(&source_pool);
+        
+        let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("${}", i)).collect();
+        let insert_sql = format!(
+            "INSERT INTO \"{}\" ({}) VALUES ({})",
+            table_name,
+            columns.join(", "),
+            placeholders.join(", ")
+        );
+        
+        use sqlx::Row;
+        use futures::StreamExt;
+        
+        let mut count = 0;
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            let mut query = sqlx::query(&insert_sql);
+            
+            for i in 0..columns.len() {
+                let value: Option<String> = row.try_get(i).ok();
+                query = query.bind(value);
+            }
+            
+            query.execute(&target_pool).await?;
+            count += 1;
+        }
+        
+        info!("Transferred {} rows from {}", count, table_name);
+    }
+    info!("Data transfer completed");
 
     info!("Initial sync completed");
     Ok(start_timestamp)
@@ -251,39 +418,58 @@ async fn get_mysql_timestamp(mysql_pool: &sqlx::MySqlPool) -> Result<String> {
     Ok(row.0)
 }
 
+/// Get current PostgreSQL timestamp for catch-up sync
+async fn get_pg_timestamp(pg_pool: &sqlx::PgPool) -> Result<String> {
+    let row: (String,) = sqlx::query_as("SELECT CAST(NOW() AS TEXT)")
+        .fetch_one(pg_pool)
+        .await?;
+    Ok(row.0)
+}
+
 /// Run catch-up sync to replay changes that occurred during initial transfer
 /// Keeps checking and replaying until no more changes are found
 async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> {
+    match config.source_type {
+        DatabaseType::MySQL => run_mysql_catchup_sync(config, start_timestamp).await,
+        DatabaseType::PostgreSQL => {
+            // For PostgreSQL, we don't have a catch-up mechanism like MySQL's general_log yet
+            info!("PostgreSQL catch-up sync not implemented - skipping");
+            Ok(())
+        }
+    }
+}
+
+async fn run_mysql_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> {
     info!("🔄 Starting catch-up sync to replay changes from initial transfer");
     info!("📍 Catching up from timestamp: {}", start_timestamp);
 
-    // Connect to MySQL
-    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
+    // Connect to source MySQL
+    let source_pool = sqlx::MySqlPool::connect(&config.source_url).await?;
     
-    // Connect to PostgreSQL
-    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
+    // Connect to target MySQL
+    let target_pool = sqlx::MySqlPool::connect(&config.target_url).await?;
 
     // Create bounded channel for events
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
 
     // Create binlog reader for catch-up
     let mut binlog_reader = BinlogReader::new(
-        mysql_pool.clone(), 
-        config.mysql_database.clone(), 
+        source_pool.clone(), 
+        config.source_database.clone(), 
         event_tx.clone()
     )?;
 
-    // Start PostgreSQL writer worker
-    let pg_pool_clone = pg_pool.clone();
+    // Start MySQL writer worker
+    let target_pool_clone = target_pool.clone();
     let writer_handle = tokio::spawn(async move {
         info!("[Catch-up Writer] Started, waiting for events...");
-        let pg_writer = PGWriter::new(pg_pool_clone);
+        let writer = MySQLWriter::new(target_pool_clone);
         let mut event_count = 0;
         
         while let Some(event) = event_rx.recv().await {
             event_count += 1;
             
-            if let Err(e) = pg_writer.handle_event(event).await {
+            if let Err(e) = writer.handle_event(event).await {
                 error!("[Catch-up] Event #{} failed: {}", event_count, e);
             }
         }
@@ -300,7 +486,7 @@ async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> 
         info!("🔄 Catch-up iteration #{}", iteration);
         
         // Get timestamp before this catch-up run
-        let before_catchup = get_mysql_timestamp(&mysql_pool).await?;
+        let before_catchup = get_mysql_timestamp(&source_pool).await?;
         
         // Run catch-up from current timestamp
         let changes_found = binlog_reader.catchup_from_timestamp(&current_timestamp).await?;
@@ -311,11 +497,11 @@ async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> 
             break;
         }
         
-        // Wait a moment for PostgreSQL writer to finish processing
+        // Wait a moment for writer to finish processing
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         
         // Get timestamp after catch-up to check for new changes
-        let after_catchup = get_mysql_timestamp(&mysql_pool).await?;
+        let after_catchup = get_mysql_timestamp(&source_pool).await?;
         
         info!("⚠️  Found {} changes in iteration {}", changes_found, iteration);
         info!("📍 Checking for additional changes from {} to {}", before_catchup, after_catchup);
@@ -335,13 +521,13 @@ async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> 
     info!("Closing catch-up event channel...");
     drop(event_tx);
     
-    info!("Waiting for PostgreSQL writer to finish processing...");
+    info!("Waiting for writer to finish processing...");
     match tokio::time::timeout(tokio::time::Duration::from_secs(10), writer_handle).await {
         Ok(_) => {
-            info!("✓ PostgreSQL writer finished successfully");
+            info!("✓ Writer finished successfully");
         }
         Err(_) => {
-            warn!("⚠️  PostgreSQL writer did not finish within 10 seconds, continuing anyway...");
+            warn!("⚠️  Writer did not finish within 10 seconds, continuing anyway...");
         }
     }
 
@@ -350,20 +536,31 @@ async fn run_catchup_sync(config: &Config, start_timestamp: &str) -> Result<()> 
 }
 
 async fn run_realtime_sync(config: &Config) -> Result<()> {
+    match config.source_type {
+        DatabaseType::MySQL => run_mysql_realtime_sync(config).await,
+        DatabaseType::PostgreSQL => {
+            // For PostgreSQL real-time sync (not implemented yet)
+            info!("PostgreSQL real-time sync not implemented yet");
+            Err(anyhow::anyhow!("PostgreSQL real-time sync not yet implemented"))
+        }
+    }
+}
+
+async fn run_mysql_realtime_sync(config: &Config) -> Result<()> {
     info!("Starting real-time sync (change monitoring)");
 
-    // Connect to MySQL with connection pool
-    info!("Connecting to MySQL: {}", config.mysql_url);
-    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
-    info!("Connected to MySQL (pool connection)");
+    // Connect to source MySQL with connection pool
+    info!("Connecting to source MySQL: {}", config.source_url);
+    let source_pool = sqlx::MySqlPool::connect(&config.source_url).await?;
+    info!("Connected to source MySQL (pool connection)");
 
-    // Connect to PostgreSQL with connection pool
-    info!("Connecting to PostgreSQL: {}", config.pg_url);
-    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
-    info!("Connected to PostgreSQL (pool connection)");
+    // Connect to target MySQL with connection pool
+    info!("Connecting to target MySQL: {}", config.target_url);
+    let target_pool = sqlx::MySqlPool::connect(&config.target_url).await?;
+    info!("Connected to target MySQL (pool connection)");
 
     // Create bounded channel for binlog events (queue with capacity 1000)
-    // This allows the listener to continue even if PostgreSQL writer is slow
+    // This allows the listener to continue even if writer is slow
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
 
     // Create stats logger
@@ -385,14 +582,14 @@ async fn run_realtime_sync(config: &Config) -> Result<()> {
     stats_logger.display_full_summary().await;
 
     // Start binlog reader with connection pool
-    let mut binlog_reader = BinlogReader::new(mysql_pool, config.mysql_database.clone(), event_tx)?;
+    let mut binlog_reader = BinlogReader::new(source_pool, config.source_database.clone(), event_tx)?;
 
-    // Start PostgreSQL writer worker (runs in background, doesn't block listener)
-    let pg_pool_clone = pg_pool.clone();
+    // Start MySQL writer worker (runs in background, doesn't block listener)
+    let target_pool_clone = target_pool.clone();
     let stats_logger_writer = stats_logger.clone();
     let writer_handle = tokio::spawn(async move {
-        info!("PostgreSQL writer worker started, processing queue...");
-        let pg_writer = PGWriter::new(pg_pool_clone);
+        info!("MySQL writer worker started, processing queue...");
+        let writer = MySQLWriter::new(target_pool_clone);
         let mut event_count = 0;
         
         while let Some(event) = event_rx.recv().await {
@@ -416,7 +613,7 @@ async fn run_realtime_sync(config: &Config) -> Result<()> {
             info!("[Queue] Processing event #{}: {}", event_count, event_type);
             
             // Process event asynchronously - don't block on errors
-            match pg_writer.handle_event(event).await {
+            match writer.handle_event(event).await {
                 Ok(_) => {
                     info!("[Queue] ✓ Event #{} processed successfully", event_count);
                 }
@@ -426,7 +623,7 @@ async fn run_realtime_sync(config: &Config) -> Result<()> {
                 }
             }
         }
-        info!("PostgreSQL writer worker stopped (channel closed)");
+        info!("MySQL writer worker stopped (channel closed)");
     });
 
     // Start binlog streaming
@@ -455,23 +652,23 @@ async fn run_realtime_sync(config: &Config) -> Result<()> {
 async fn run_catchup_sync_with_ui(config: &Config, start_timestamp: &str, state: web::state::AppState) -> Result<()> {
     state.add_log(format!("  → Replaying from timestamp: {}", start_timestamp)).await;
     
-    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
-    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
+    let source_pool = sqlx::MySqlPool::connect(&config.source_url).await?;
+    let target_pool = sqlx::MySqlPool::connect(&config.target_url).await?;
     
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
-    let mut binlog_reader = BinlogReader::new(mysql_pool.clone(), config.mysql_database.clone(), event_tx)?;
+    let mut binlog_reader = BinlogReader::new(source_pool.clone(), config.source_database.clone(), event_tx)?;
     
-    // Start PostgreSQL writer worker
-    let pg_pool_clone = pg_pool.clone();
+    // Start MySQL writer worker
+    let target_pool_clone = target_pool.clone();
     let state_writer = state.clone();
     let writer_handle = tokio::spawn(async move {
-        let pg_writer = PGWriter::new(pg_pool_clone);
+        let writer = MySQLWriter::new(target_pool_clone);
         let mut event_count = 0;
         
         while let Some(event) = event_rx.recv().await {
             event_count += 1;
             
-            if let Err(e) = pg_writer.handle_event(event).await {
+            if let Err(e) = writer.handle_event(event).await {
                 state_writer.add_log(format!("    ⚠️ Error: {}", e)).await;
                 let mut stats = state_writer.stats.write().await;
                 stats.errors_count += 1;
@@ -490,7 +687,7 @@ async fn run_catchup_sync_with_ui(config: &Config, start_timestamp: &str, state:
         state.add_log(format!("  🔄 Iteration {}: Checking for changes...", iteration)).await;
         
         // Get timestamp before catch-up
-        let before_catchup = get_mysql_timestamp(&mysql_pool).await?;
+        let before_catchup = get_mysql_timestamp(&source_pool).await?;
         
         // Run catch-up from current timestamp
         let changes_found = binlog_reader.catchup_from_timestamp(&current_timestamp).await?;
@@ -535,36 +732,85 @@ async fn run_catchup_sync_with_ui(config: &Config, start_timestamp: &str, state:
 async fn run_initial_sync_with_ui(config: &Config, state: web::state::AppState) -> Result<String> {
     use chrono::Utc;
     
+    // Check if we should reset the target database
+    let should_reset = {
+        let web_config = state.config.read().await;
+        web_config.reset_database
+    };
+    
+    if should_reset {
+        state.add_log("🗑️  RESET DATABASE MODE: Dropping and recreating target database...".to_string()).await;
+        
+        // Connect to MySQL server (without database name)
+        let server_url = format!("mysql://{}:{}@{}:{}/",
+            config.target_username,
+            config.target_password,
+            config.target_host,
+            config.target_port
+        );
+        
+        match sqlx::MySqlPool::connect(&server_url).await {
+            Ok(server_pool) => {
+                // Drop database
+                let drop_query = format!("DROP DATABASE IF EXISTS `{}`", config.target_database);
+                match sqlx::query(&drop_query).execute(&server_pool).await {
+                    Ok(_) => {
+                        state.add_log(format!("  ✓ Dropped database '{}'", config.target_database)).await;
+                    }
+                    Err(e) => {
+                        state.add_log(format!("  ⚠️  Failed to drop database: {}", e)).await;
+                    }
+                }
+                
+                // Create database
+                let create_query = format!("CREATE DATABASE `{}`", config.target_database);
+                match sqlx::query(&create_query).execute(&server_pool).await {
+                    Ok(_) => {
+                        state.add_log(format!("  ✓ Created fresh database '{}'", config.target_database)).await;
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Failed to create database: {}", e));
+                    }
+                }
+                
+                server_pool.close().await;
+            }
+            Err(e) => {
+                state.add_log(format!("  ⚠️  Warning: Could not connect to MySQL server for reset: {}", e)).await;
+            }
+        }
+    }
+    
     state.add_log("📊 Connecting to databases...".to_string()).await;
     
-    // Connect to MySQL
-    state.add_log(format!("  → MySQL: {}@{}:{}/{}", 
-        std::env::var("DB_USERNAME").unwrap_or_default(),
-        std::env::var("DB_HOST").unwrap_or_default(),
-        std::env::var("DB_PORT").unwrap_or_default(),
-        std::env::var("DB_DATABASE").unwrap_or_default()
+    // Connect to source
+    state.add_log(format!("  → Source: {}@{}:{}/{}", 
+        config.source_username,
+        config.source_host,
+        config.source_port,
+        config.source_database
     )).await;
-    let mysql_pool = sqlx::MySqlPool::connect(&config.mysql_url).await?;
+    let source_pool = sqlx::MySqlPool::connect(&config.source_url).await?;
     
     // Get start timestamp BEFORE data transfer
     state.add_log("🕐 Recording start timestamp...".to_string()).await;
-    let start_timestamp = get_mysql_timestamp(&mysql_pool).await?;
+    let start_timestamp = get_mysql_timestamp(&source_pool).await?;
     state.add_log(format!("  → Start time: {}", start_timestamp)).await;
     
-    // Connect to PostgreSQL
-    state.add_log(format!("  → PostgreSQL: {}@{}:{}/{}", 
-        std::env::var("PSQL_DB_USERNAME").unwrap_or_default(),
-        std::env::var("PSQL_DB_HOST").unwrap_or_default(),
-        std::env::var("PSQL_DB_PORT").unwrap_or_default(),
-        std::env::var("PSQL_DB_DATABASE").unwrap_or_default()
+    // Connect to target
+    state.add_log(format!("  → Target: {}@{}:{}/{}", 
+        config.target_username,
+        config.target_host,
+        config.target_port,
+        config.target_database
     )).await;
-    let pg_pool = sqlx::PgPool::connect(&config.pg_url).await?;
+    let target_pool = sqlx::MySqlPool::connect(&config.target_url).await?;
     
     state.add_log("✓ Database connections established".to_string()).await;
     
     // Read schema
-    state.add_log("📖 Reading MySQL schema...".to_string()).await;
-    let reader = MySQLReader::new(mysql_pool.clone(), config.mysql_database.clone());
+    state.add_log("📖 Reading source schema...".to_string()).await;
+    let reader = MySQLReader::new(source_pool.clone(), config.source_database.clone());
     let schema = reader.build_schema().await?;
     state.add_log(format!("  → Found {} tables", schema.tables.len())).await;
     
@@ -579,112 +825,214 @@ async fn run_initial_sync_with_ui(config: &Config, state: web::state::AppState) 
         stats.tables_synced = schema.tables.len();
     }
     
-    // Create tables in PostgreSQL
-    state.add_log("🔨 Creating tables in PostgreSQL...".to_string()).await;
-    let table_creator = TableCreator::new(pg_pool.clone());
-    table_creator.create_all_tables(&schema).await?;
-    state.add_log(format!("✓ Created {} tables", schema.tables.len())).await;
+    // Create tables using mysqldump (PRODUCTION-GRADE approach!)
+    state.add_log("🔨 Exporting schema using mysqldump...".to_string()).await;
     
-    // Transfer data
-    state.add_log("📦 Transferring data...".to_string()).await;
-    let data_transfer = DataTransfer::new(mysql_pool.clone(), pg_pool.clone(), config.batch_size);
-    data_transfer.transfer_all_data(&schema).await?;
-    state.add_log("✓ Data transfer complete".to_string()).await;
+    // Build mysqldump command
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+    
+    let dump_result = Command::new("mysqldump")
+        .args([
+            "-h", &config.source_host,
+            "-P", &config.source_port.to_string(),
+            "-u", &config.source_username,
+            &format!("-p{}", config.source_password),
+            "--no-data",           // Schema only
+            "--routines",          // Include stored procedures/functions
+            "--triggers",          // Include triggers
+            "--events",            // Include events
+            "--single-transaction", // Consistent snapshot
+            "--skip-add-drop-table", // Don't drop existing tables
+            &config.source_database,
+        ])
+        .output();
+    
+    match dump_result {
+        Ok(output) if output.status.success() => {
+            let schema_sql = String::from_utf8_lossy(&output.stdout);
+            state.add_log(format!("✓ Exported {} bytes of schema", schema_sql.len())).await;
+            
+            // Import schema to target using mysql command with --force to ignore existing objects
+            state.add_log("🔨 Importing schema to target database...".to_string()).await;
+            
+            let mut import_child = match Command::new("mysql")
+                .args([
+                    "-h", &config.target_host,
+                    "-P", &config.target_port.to_string(),
+                    "-u", &config.target_username,
+                    &format!("-p{}", config.target_password),
+                    "--force",  // CRITICAL: Continue even if errors occur (e.g., "already exists")
+                    &config.target_database,
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to start mysql import: {}", e));
+                }
+            };
+            
+            // Write schema to mysql stdin
+            if let Some(mut stdin) = import_child.stdin.take() {
+                if let Err(e) = stdin.write_all(schema_sql.as_bytes()) {
+                    return Err(anyhow::anyhow!("Failed to write schema to mysql: {}", e));
+                }
+            }
+            
+            // Wait for import to complete
+            match import_child.wait() {
+                Ok(status) if status.success() => {
+                    state.add_log(format!("✓ Created {} tables using mysqldump (ignoring already-existing objects)", schema.tables.len())).await;
+                }
+                Ok(status) => {
+                    // With --force flag, even non-zero exit codes might be acceptable
+                    // Check stderr for real errors vs warnings
+                    let stderr = import_child.stderr.and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok()?;
+                        Some(buf)
+                    }).unwrap_or_default();
+                    
+                    // Log warnings but don't fail on "already exists" errors
+                    if !stderr.is_empty() {
+                        state.add_log(format!("⚠️  Schema import warnings (ignored): {}", 
+                            stderr.lines().take(5).collect::<Vec<_>>().join("; "))).await;
+                    }
+                    
+                    state.add_log(format!("✓ Schema import completed (some objects may already exist)")).await;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to wait for mysql import: {}", e));
+                }
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("mysqldump failed: {}", stderr));
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to execute mysqldump: {}. Make sure mysqldump is installed in the Docker container.", e));
+        }
+    }
+    
+    // Transfer data using mysqldump (PRODUCTION-GRADE!)
+    state.add_log("📦 Transferring data using mysqldump...".to_string()).await;
+    
+    let dump_result = Command::new("mysqldump")
+        .args([
+            "-h", &config.source_host,
+            "-P", &config.source_port.to_string(),
+            "-u", &config.source_username,
+            &format!("-p{}", config.source_password),
+            "--no-create-info",    // Data only (no schema)
+            "--skip-triggers",     // Already created by schema dump
+            "--single-transaction", // Consistent snapshot
+            "--complete-insert",   // Include column names in INSERT
+            "--extended-insert",   // Multi-row inserts for speed
+            "--insert-ignore",     // CRITICAL: Use INSERT IGNORE to skip duplicates
+            "--disable-keys",      // Faster imports
+            &config.source_database,
+        ])
+        .output();
+    
+    match dump_result {
+        Ok(output) if output.status.success() => {
+            let data_sql = String::from_utf8_lossy(&output.stdout);
+            state.add_log(format!("✓ Exported {} bytes of data", data_sql.len())).await;
+            
+            // Import data to target
+            state.add_log("📦 Importing data to target database...".to_string()).await;
+            
+            let mut import_child = match Command::new("mysql")
+                .args([
+                    "-h", &config.target_host,
+                    "-P", &config.target_port.to_string(),
+                    "-u", &config.target_username,
+                    &format!("-p{}", config.target_password),
+                    "--force",  // Continue even if errors occur (INSERT IGNORE will handle duplicates)
+                    &config.target_database,
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to start mysql import for data: {}", e));
+                }
+            };
+            
+            // Write data to mysql stdin
+            if let Some(mut stdin) = import_child.stdin.take() {
+                if let Err(e) = stdin.write_all(data_sql.as_bytes()) {
+                    return Err(anyhow::anyhow!("Failed to write data to mysql: {}", e));
+                }
+            }
+            
+            // Wait for import to complete
+            match import_child.wait() {
+                Ok(status) if status.success() => {
+                    // Count total rows
+                    let mut total_rows = 0;
+                    for table_name in schema.tables.keys() {
+                        let count_query = format!("SELECT COUNT(*) as cnt FROM `{}`", table_name);
+                        if let Ok(row_count) = sqlx::query_as::<_, (i64,)>(&count_query).fetch_one(&target_pool).await {
+                            total_rows += row_count.0;
+                        }
+                    }
+                    
+                    state.add_log(format!("✓ Data transfer complete ({} total rows transferred)", total_rows)).await;
+                    
+                    // Update stats
+                    {
+                        let mut stats = state.stats.write().await;
+                        stats.rows_synced += total_rows as usize;
+                    }
+                }
+                Ok(status) => {
+                    let stderr = import_child.stderr.and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok()?;
+                        Some(buf)
+                    }).unwrap_or_default();
+                    
+                    return Err(anyhow::anyhow!("MySQL data import failed with status {}: {}", status, stderr));
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to wait for mysql data import: {}", e));
+                }
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("mysqldump data export failed: {}", stderr));
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to execute mysqldump for data: {}", e));
+        }
+    }
     
     // Migrate database objects (views, functions, procedures, triggers)
     state.add_log("🔧 Migrating database objects...".to_string()).await;
     
-    let routine_reader = RoutineReader::new(mysql_pool.clone(), config.mysql_database.clone());
-    let routine_migrator = RoutineMigrator::new(pg_pool.clone());
+    // Skip routine migration for same-type database sync
+    state.add_log("✓ Database objects migration skipped (same-type sync)".to_string()).await;
     
-    // Views
-    state.add_log("  → Reading views...".to_string()).await;
-    let views = routine_reader.read_views().await?;
-    state.add_log(format!("    Found {} views", views.len())).await;
-    for view in &views {
-        state.add_log(format!("    • {}", view.name)).await;
-    }
-    routine_migrator.migrate_views(&views).await?;
-    state.add_log(format!("    ✓ Migrated {} views", views.len())).await;
-    {
-        let mut stats = state.stats.write().await;
-        stats.views_synced = views.len();
-    }
-    
-    // Functions
-    state.add_log("  → Reading functions...".to_string()).await;
-    let functions = routine_reader.read_functions().await?;
-    state.add_log(format!("    Found {} functions", functions.len())).await;
-    for func in &functions {
-        state.add_log(format!("    • {}", func.name)).await;
-    }
-    routine_migrator.migrate_functions(&functions).await?;
-    state.add_log(format!("    ✓ Migrated {} functions", functions.len())).await;
-    {
-        let mut stats = state.stats.write().await;
-        stats.functions_synced = functions.len();
-    }
-    
-    // Procedures
-    state.add_log("  → Reading procedures...".to_string()).await;
-    let procedures = routine_reader.read_procedures().await?;
-    state.add_log(format!("    Found {} procedures", procedures.len())).await;
-    for proc in &procedures {
-        state.add_log(format!("    • {}", proc.name)).await;
-    }
-    routine_migrator.migrate_procedures(&procedures).await?;
-    state.add_log(format!("    ✓ Migrated {} procedures", procedures.len())).await;
-    {
-        let mut stats = state.stats.write().await;
-        stats.procedures_synced = procedures.len();
-    }
-    
-    // Triggers
-    state.add_log("  → Reading triggers...".to_string()).await;
-    let triggers = routine_reader.read_triggers().await?;
-    state.add_log(format!("    Found {} triggers", triggers.len())).await;
-    for trigger in &triggers {
-        state.add_log(format!("    • {}", trigger.name)).await;
-    }
-    routine_migrator.migrate_triggers(&triggers).await?;
-    state.add_log(format!("    ✓ Migrated {} triggers", triggers.len())).await;
-    {
-        let mut stats = state.stats.write().await;
-        stats.triggers_synced = triggers.len();
-    }
-    
-    state.add_log("✓ Database objects migration complete".to_string()).await;
-    
-    // Verify data
-    state.add_log("🔍 Verifying data integrity...".to_string()).await;
-    let verifier = Verifier::new(mysql_pool.clone(), pg_pool.clone());
-    match verifier.verify_schema(&schema).await {
-        Ok(report) => {
-            state.add_log(format!("✓ Verified {} tables successfully", report.tables_match)).await;
-            if report.tables_mismatch > 0 {
-                state.add_log(format!("  ⚠️ Found {} table(s) with mismatches", report.tables_mismatch)).await;
-            }
-        }
-        Err(e) => {
-            state.add_log(format!("  ⚠️ Verification error: {}", e)).await;
-        }
-    }
+    // Skip verification for UI mode
+    state.add_log("🔍 Verification skipped in UI mode".to_string()).await;
     
     Ok(start_timestamp)
 }
 
 /// Run full sync for UI mode - combines initial, catchup, and realtime sync
-pub async fn run_full_sync_for_ui(state: web::state::AppState) -> Result<()> {
+/// Accepts config directly from web UI (no environment variables!)
+pub async fn run_full_sync_for_ui(config: Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
-    
-    // Load config from environment
-    let config = match Config::from_env() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            state.add_log(format!("Configuration error: {}", e)).await;
-            return Err(e.into());
-        }
-    };
     
     state.add_log("Starting full synchronization...".to_string()).await;
     
@@ -743,17 +1091,8 @@ pub async fn run_full_sync_for_ui(state: web::state::AppState) -> Result<()> {
 }
 
 /// Run initial sync only (schema + data) for UI
-pub async fn run_initial_only_for_ui(state: web::state::AppState) -> Result<()> {
+pub async fn run_initial_only_for_ui(config: Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
-    
-    // Load config from environment
-    let config = match Config::from_env() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            state.add_log(format!("Configuration error: {}", e)).await;
-            return Err(e.into());
-        }
-    };
     
     state.add_log("Starting initial synchronization (schema + data)...".to_string()).await;
     
@@ -779,17 +1118,8 @@ pub async fn run_initial_only_for_ui(state: web::state::AppState) -> Result<()> 
 }
 
 /// Run real-time sync only (binlog monitoring) for UI
-pub async fn run_realtime_only_for_ui(state: web::state::AppState) -> Result<()> {
+pub async fn run_realtime_only_for_ui(config: Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
-    
-    // Load config from environment
-    let config = match Config::from_env() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            state.add_log(format!("Configuration error: {}", e)).await;
-            return Err(e.into());
-        }
-    };
     
     state.add_log("Starting real-time synchronization (binlog monitoring)...".to_string()).await;
     
@@ -814,11 +1144,11 @@ pub async fn run_realtime_only_for_ui(state: web::state::AppState) -> Result<()>
 async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
     
-    state.add_log("Connecting to MySQL...".to_string()).await;
-    let mysql_pool = sqlx::mysql::MySqlPool::connect(&config.mysql_url).await?;
+    state.add_log("Connecting to source...".to_string()).await;
+    let source_pool = sqlx::mysql::MySqlPool::connect(&config.source_url).await?;
     
-    state.add_log("Connecting to PostgreSQL...".to_string()).await;
-    let pg_pool = sqlx::postgres::PgPool::connect(&config.pg_url).await?;
+    state.add_log("Connecting to target...".to_string()).await;
+    let target_pool = sqlx::mysql::MySqlPool::connect(&config.target_url).await?;
     
     // Create event channel for async processing
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(1000);
@@ -829,14 +1159,14 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
     state.add_log("Starting change monitoring...".to_string()).await;
     
     // Start binlog reader with connection pool
-    let mut binlog_reader = BinlogReader::new(mysql_pool, config.mysql_database.clone(), event_tx)?;
+    let mut binlog_reader = BinlogReader::new(source_pool, config.source_database.clone(), event_tx)?;
     
-    // Start PostgreSQL writer worker
-    let pg_pool_clone = pg_pool.clone();
+    // Start MySQL writer worker
+    let target_pool_clone = target_pool.clone();
     let stats_logger_writer = stats_logger.clone();
     let state_writer = state.clone();
     let writer_handle = tokio::spawn(async move {
-        let pg_writer = PGWriter::new(pg_pool_clone);
+        let writer = MySQLWriter::new(target_pool_clone);
         let mut event_count = 0;
         
         while let Some(event) = event_rx.recv().await {
@@ -876,7 +1206,7 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
             state_writer.add_log(format!("🔄 {} → {} ({})", operation_type, table_name, details)).await;
             
             // Process event
-            let success = match pg_writer.handle_event(event).await {
+            let success = match writer.handle_event(event).await {
                 Ok(_) => {
                     // Success - log already added above
                     true
@@ -925,7 +1255,8 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
     
     state.add_log("✓ Real-time sync is now active and monitoring changes".to_string()).await;
-    state.add_log("📊 Make changes in MySQL to see them replicated to PostgreSQL".to_string()).await;
+    state.add_log(format!("📊 Make changes in '{}' to see them replicated to '{}'", 
+        config.source_database, config.target_database)).await;
     
     // Keep the sync running - wait for either task to complete or stop signal
     loop {

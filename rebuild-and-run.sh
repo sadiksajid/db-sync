@@ -1,12 +1,13 @@
 #!/bin/bash
 # Rebuild Docker image and run sync
 # Usage: ./rebuild-and-run.sh [--initial-sync|--realtime-sync|--full-sync]
-# Default: --full-sync (initial + realtime)
+# Default: --initial-sync
+# Note: --full-sync and --realtime-sync only work with MySQL
 
-SYNC_MODE=${1:---full-sync}
+SYNC_MODE=${1:---initial-sync}
 
 echo "Building Docker image..."
-IMAGE_SHA=$(docker build -q -t mysql_psql_proxy:latest .)
+IMAGE_SHA=$(docker build -q -t db_sync_proxy:latest .)
 
 if [ $? -eq 0 ]; then
     echo "✓ Build successful: $IMAGE_SHA"
@@ -14,23 +15,25 @@ if [ $? -eq 0 ]; then
     echo "=========================================="
     echo ""
     
+    # Example: MySQL to MySQL sync
+    # Change SOURCE_DB_TYPE and TARGET_DB_TYPE to "postgresql" for PostgreSQL sync
     docker run --rm -it \
-      -e DB_HOST=192.168.1.237 \
-      -e DB_PORT=3306 \
-      -e DB_DATABASE=testing \
-      -e DB_USERNAME=root \
-      -e DB_PASSWORD=password \
-      -e PSQL_DB_HOST=192.168.1.237 \
-      -e PSQL_DB_PORT=5432 \
-      -e PSQL_DB_DATABASE=testing \
-      -e PSQL_DB_USERNAME=postgres \
-      -e PSQL_DB_PASSWORD=postgres \
-        -e GEMINI_API_KEY="" \
-        -e GEMINI_MODEL="gemini-2.0-flash-exp" \
+      -e SOURCE_DB_TYPE=mysql \
+      -e TARGET_DB_TYPE=mysql \
+      -e SOURCE_DB_HOST=192.168.1.237 \
+      -e SOURCE_DB_PORT=3306 \
+      -e SOURCE_DB_DATABASE=sourcedb \
+      -e SOURCE_DB_USERNAME=root \
+      -e SOURCE_DB_PASSWORD=password \
+      -e TARGET_DB_HOST=192.168.1.237 \
+      -e TARGET_DB_PORT=3307 \
+      -e TARGET_DB_DATABASE=targetdb \
+      -e TARGET_DB_USERNAME=root \
+      -e TARGET_DB_PASSWORD=password \
         -e POLL_INTERVAL_SECS=10 \
       -e BATCH_SIZE=200 \
       -e RUST_LOG=info \
-      mysql_psql_proxy:latest \
+      db_sync_proxy:latest \
       "$SYNC_MODE" 2>&1
     
     EXIT_CODE=$?

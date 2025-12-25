@@ -1,22 +1,24 @@
-# MySQL to PostgreSQL Sync Proxy
+# Database Synchronization Proxy
 
-A powerful, real-time database synchronization tool that migrates and continuously syncs data from MySQL to PostgreSQL. Built with Rust for high performance and reliability.
+A powerful, real-time database synchronization tool that syncs data between identical database types. Built with Rust for high performance and reliability.
 
 ## 🚀 Features
 
 ### Core Synchronization
-- **Schema Migration**: Automatic conversion of MySQL schemas to PostgreSQL-compatible structures
+- **Same-Type Sync**: Synchronize MySQL-to-MySQL or PostgreSQL-to-PostgreSQL
+- **Schema Migration**: Automatic copying of database schemas
 - **Initial Data Transfer**: Bulk transfer of existing data with configurable batch sizes
-- **Real-time Sync**: Continuous monitoring and replication of INSERT, UPDATE, DELETE operations
-- **Catch-up Sync**: Ensures no data is lost during initial migration by replaying changes
+- **Real-time Sync** (MySQL only): Continuous monitoring and replication of INSERT, UPDATE, DELETE operations
+- **Catch-up Sync** (MySQL only): Ensures no data is lost during initial migration by replaying changes
 - **Three Sync Modes**: Choose between Full Sync, Initial Sync Only, or Real-time Sync Only
 
-### Database Objects Migration
-- **Views**: Migrates MySQL views to PostgreSQL
-- **Functions**: Converts MySQL stored functions to PostgreSQL equivalents
-- **Procedures**: Migrates stored procedures with parameter mapping
-- **Triggers**: Converts MySQL triggers to PostgreSQL trigger functions
-- **AI-Powered Conversion**: Optional Gemini AI integration for intelligent SQL conversion
+### Database Support
+- **MySQL to MySQL**: Complete synchronization between MySQL databases
+  - Supports real-time change detection using general_log
+  - Catch-up sync to replay missed changes
+- **PostgreSQL to PostgreSQL**: Schema and data synchronization
+  - Initial sync and data transfer
+  - Real-time sync (coming soon)
 
 ### Web UI
 - **Modern Dashboard**: Intuitive web interface for configuration and monitoring
@@ -33,24 +35,23 @@ A powerful, real-time database synchronization tool that migrates and continuous
 
 ## 📋 Requirements
 
-### MySQL Database
-- MySQL 5.7+ or MariaDB 10.2+
+### Source Database
+- **MySQL**: MySQL 5.7+ or MariaDB 10.2+
 - `general_log` must be enabled (tool enables it automatically if you have SUPER privilege)
-- User with permissions:
-  - `SELECT` on source database
-  - `SELECT` on `mysql.general_log`
-  - `SUPER` privilege (for enabling general_log)
+  - User with permissions: `SELECT` on source database, `SELECT` on `mysql.general_log`, `SUPER` privilege
+- **PostgreSQL**: PostgreSQL 10+
+  - User with permissions: `SELECT` on source database
 
-### PostgreSQL Database
-- PostgreSQL 10+
-- User with permissions:
-  - `CREATE` tables and schemas
-  - `INSERT`, `UPDATE`, `DELETE` on target database
+### Target Database
+- **MySQL**: MySQL 5.7+ or MariaDB 10.2+
+  - User with permissions: `CREATE` tables, `INSERT`, `UPDATE`, `DELETE`
+- **PostgreSQL**: PostgreSQL 10+
+  - User with permissions: `CREATE` tables and schemas, `INSERT`, `UPDATE`, `DELETE`
 
 ### System Requirements
 - Docker (recommended) or Rust 1.70+
 - 512MB RAM minimum (1GB+ recommended)
-- Network access between source MySQL and target PostgreSQL
+- Network access between source and target databases
 
 ## 🔧 Installation
 
@@ -58,8 +59,7 @@ A powerful, real-time database synchronization tool that migrates and continuous
 
 1. **Clone the repository**
 ```bash
-git clone <repository-url>
-cd "mysql to psql proxy"
+cd "DB sync"
 ```
 
 2. **Run the Web UI**
@@ -85,7 +85,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo build --release
 
 # Run with web UI
-./target/release/mysql_psql_proxy --web-ui
+./target/release/db_sync_proxy --web-ui
 ```
 
 ## ⚙️ Configuration
@@ -95,40 +95,68 @@ cargo build --release
 1. Open http://localhost:5009 in your browser
 2. Create first user account (appears on first run)
 3. Go to **Settings** tab
-4. Fill in MySQL and PostgreSQL connection details:
-   - **MySQL**: Host, Port, Database, Username, Password
-   - **PostgreSQL**: Host, Port, Database, Username, Password
+4. Fill in source and target database connection details:
+   - **Source DB Type**: MySQL or PostgreSQL
+   - **Source**: Host, Port, Database, Username, Password
+   - **Target DB Type**: MySQL or PostgreSQL (must match source type)
+   - **Target**: Host, Port, Database, Username, Password
 5. Configure sync options:
    - **Batch Size**: Records per batch (default: 100)
    - **Poll Interval**: Seconds between change checks (default: 10)
    - **Sync Mode**: Full Sync / Initial Only / Real-time Only
-6. (Optional) Add Gemini API key for intelligent SQL conversion
-7. Click **Save Configuration**
+6. Click **Save Configuration**
 
 ### Environment Variables (CLI Mode)
 
-```bash
-# MySQL Configuration
-export DB_HOST=localhost
-export DB_PORT=3306
-export DB_DATABASE=mydb
-export DB_USERNAME=user
-export DB_PASSWORD=password
+For **MySQL to MySQL** sync:
 
-# PostgreSQL Configuration
-export PSQL_DB_HOST=localhost
-export PSQL_DB_PORT=5432
-export PSQL_DB_DATABASE=mydb
-export PSQL_DB_USERNAME=user
-export PSQL_DB_PASSWORD=password
+```bash
+# Database types
+export SOURCE_DB_TYPE=mysql
+export TARGET_DB_TYPE=mysql
+
+# Source MySQL Configuration
+export SOURCE_DB_HOST=localhost
+export SOURCE_DB_PORT=3306
+export SOURCE_DB_DATABASE=sourcedb
+export SOURCE_DB_USERNAME=user
+export SOURCE_DB_PASSWORD=password
+
+# Target MySQL Configuration
+export TARGET_DB_HOST=localhost
+export TARGET_DB_PORT=3307
+export TARGET_DB_DATABASE=targetdb
+export TARGET_DB_USERNAME=user
+export TARGET_DB_PASSWORD=password
 
 # Sync Configuration
 export BATCH_SIZE=100
 export POLL_INTERVAL_SECS=10
+```
 
-# Optional: Gemini AI for DB objects migration
-export GEMINI_API_KEY=your-api-key
-export GEMINI_MODEL=gemini-2.0-flash-exp
+For **PostgreSQL to PostgreSQL** sync:
+
+```bash
+# Database types
+export SOURCE_DB_TYPE=postgresql
+export TARGET_DB_TYPE=postgresql
+
+# Source PostgreSQL Configuration
+export SOURCE_DB_HOST=localhost
+export SOURCE_DB_PORT=5432
+export SOURCE_DB_DATABASE=sourcedb
+export SOURCE_DB_USERNAME=user
+export SOURCE_DB_PASSWORD=password
+
+# Target PostgreSQL Configuration
+export TARGET_DB_HOST=localhost
+export TARGET_DB_PORT=5433
+export TARGET_DB_DATABASE=targetdb
+export TARGET_DB_USERNAME=user
+export TARGET_DB_PASSWORD=password
+
+# Sync Configuration
+export BATCH_SIZE=100
 ```
 
 ## 🎯 Usage
@@ -145,9 +173,9 @@ export GEMINI_MODEL=gemini-2.0-flash-exp
 3. **Configure connections** in the Settings tab
 
 4. **Select sync mode** in the Home tab:
-   - **Full Sync**: Complete migration + continuous monitoring (recommended for first-time)
+   - **Full Sync**: Complete migration + continuous monitoring (recommended for first-time, MySQL only)
    - **Initial Sync Only**: Schema + data transfer, then stops
-   - **Real-time Sync Only**: Only monitors changes (assumes data already migrated)
+   - **Real-time Sync Only**: Only monitors changes (MySQL only, assumes data already migrated)
 
 5. **Start synchronization** by clicking "Start Sync"
 
@@ -159,48 +187,49 @@ export GEMINI_MODEL=gemini-2.0-flash-exp
 
 ### CLI Mode
 
-#### Full Sync (Initial + Real-time)
+#### MySQL to MySQL - Full Sync (Initial + Real-time)
 ```bash
+export SOURCE_DB_TYPE=mysql
+export TARGET_DB_TYPE=mysql
+# ... set other environment variables ...
 ./rebuild-and-run.sh --full-sync
 ```
 
-#### Initial Sync Only
+#### PostgreSQL to PostgreSQL - Initial Sync Only
 ```bash
+export SOURCE_DB_TYPE=postgresql
+export TARGET_DB_TYPE=postgresql
+# ... set other environment variables ...
 ./rebuild-and-run.sh --initial-sync
-```
-
-#### Real-time Sync Only
-```bash
-./rebuild-and-run.sh --realtime-sync
 ```
 
 ## 🔄 Sync Modes Explained
 
-### 1. Full Sync (Recommended for First-Time)
+### 1. Full Sync (MySQL only - Recommended for First-Time)
 **What it does:**
 - Phase 1: Migrates schema and transfers all existing data
 - Phase 2: Replays changes that occurred during initial transfer (catch-up)
 - Phase 3: Starts real-time monitoring of new changes
 
 **Best for:**
-- First-time migration from MySQL to PostgreSQL
+- First-time migration between MySQL databases
 - Complete database replication
 - Ensuring zero data loss
 
 ### 2. Initial Sync Only
 **What it does:**
-- Migrates schema to PostgreSQL
+- Copies schema to target database
 - Transfers all existing data
 - Stops after completion
 
 **Best for:**
 - One-time data migration
-- Testing schema conversion
 - Creating a snapshot of current data
+- Both MySQL and PostgreSQL
 
-### 3. Real-time Sync Only
+### 3. Real-time Sync Only (MySQL only)
 **What it does:**
-- Assumes schema and data already exist in PostgreSQL
+- Assumes schema and data already exist in target database
 - Only monitors and replicates new changes
 - Uses MySQL general_log for change detection
 
@@ -208,32 +237,6 @@ export GEMINI_MODEL=gemini-2.0-flash-exp
 - Resuming sync after interruption
 - Monitoring ongoing changes after initial migration
 - Continuous replication setups
-
-## 🗃️ Database Objects Migration
-
-The tool can migrate complex database objects using two methods:
-
-### 1. Regex-Based Conversion (Default)
-Automatically converts basic SQL syntax:
-- Data type mapping (INT → INTEGER, VARCHAR → VARCHAR, etc.)
-- Function syntax adjustments
-- Trigger format conversion
-
-### 2. AI-Powered Conversion (Optional)
-With Gemini API key configured:
-- Intelligent SQL translation
-- Complex syntax handling
-- Parameter and variable mapping
-- Error-free PostgreSQL generation
-
-**To enable AI conversion:**
-1. Get a free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Add it in Settings → Gemini API Key
-3. AI will be used automatically for views, functions, procedures, and triggers
-
-**Rate Limiting:**
-- 1 API call per minute to avoid quota issues
-- Automatic fallback to regex conversion on quota exceeded
 
 ## 📊 Statistics & Monitoring
 
@@ -278,12 +281,12 @@ Create `docker-compose.yml`:
 version: '3.8'
 
 services:
-  mysql-psql-sync:
-    image: mysql_psql_proxy:latest
+  db-sync:
+    image: db_sync_proxy:latest
     ports:
       - "5009:5009"
     volumes:
-      - ./mysql_psql_data:/app/data
+      - ./db_sync_data:/app/data
     environment:
       - RUST_LOG=info
     command: --web-ui
@@ -295,17 +298,6 @@ Run:
 docker-compose up -d
 ```
 
-### Using Docker Run
-
-```bash
-docker run -d \
-  -p 5009:5009 \
-  -v $(pwd)/mysql_psql_data:/app/data \
-  -e RUST_LOG=info \
-  --name mysql_psql_ui \
-  mysql_psql_proxy:latest --web-ui
-```
-
 ### Volume Persistence
 The `/app/data` volume contains:
 - `config.db`: SQLite database with all settings
@@ -315,7 +307,7 @@ The `/app/data` volume contains:
 
 ## 🛠️ Troubleshooting
 
-### General_log Errors
+### General_log Errors (MySQL)
 **Problem**: `general_log is not enabled`
 **Solution**: The tool enables it automatically if you have SUPER privilege. If not:
 ```sql
@@ -323,19 +315,12 @@ SET GLOBAL general_log = 'ON';
 SET GLOBAL log_output = 'TABLE';
 ```
 
-### First Operation Not Detected
-**Problem**: First change after starting sync is missed
-**Solution**: This is now fixed! The tool waits 2 seconds after initialization before declaring sync active.
-
-### Slow Performance
-**Problem**: High CPU or slow queries
-**Solutions**:
-- Increase `POLL_INTERVAL_SECS` (default: 10)
-- Reduce `BATCH_SIZE` if memory is limited
-- The tool automatically cleans old general_log entries
+### Database Type Mismatch
+**Problem**: "Source and target database types must be the same"
+**Solution**: This tool only supports same-type synchronization. Ensure SOURCE_DB_TYPE and TARGET_DB_TYPE are identical (both `mysql` or both `postgresql`).
 
 ### Connection Errors
-**Problem**: Cannot connect to MySQL/PostgreSQL
+**Problem**: Cannot connect to source/target database
 **Solutions**:
 - Verify credentials in Settings
 - Check network connectivity
@@ -344,19 +329,11 @@ SET GLOBAL log_output = 'TABLE';
 
 ### Chart Shows No Data
 **Problem**: Operations occur but chart is empty
-**Solution**: The tool now saves statistics to SQLite. Make sure:
+**Solution**: The tool saves statistics to SQLite. Make sure:
 - Real-time sync is running
-- Operations are being made in MySQL
+- Operations are being made in source database
 - Wait 2-4 seconds for first detection
 - Check Logs tab for operation confirmations
-
-### Database Object Migration Fails
-**Problem**: Views/functions not migrating correctly
-**Solutions**:
-- Add Gemini API key for AI-powered conversion
-- Check logs for specific SQL errors
-- Manually adjust complex objects after migration
-- Some MySQL-specific features may need manual conversion
 
 ## 📚 API Endpoints
 
@@ -394,23 +371,21 @@ SET GLOBAL log_output = 'TABLE';
 - **Database Drivers**: sqlx (MySQL, PostgreSQL, SQLite)
 - **Frontend**: Vanilla JavaScript, Chart.js
 - **Storage**: SQLite for config and stats
-- **AI Integration**: Google Gemini API
 
 ### Components
-1. **Schema Reader**: Analyzes MySQL schema structure
-2. **Table Creator**: Generates PostgreSQL-compatible DDL
+1. **Schema Readers**: Read schema from MySQL or PostgreSQL
+2. **Table Creator**: Generates DDL for target database
 3. **Data Migrator**: Bulk transfers with batching
-4. **Binlog Reader**: Monitors MySQL general_log for changes
-5. **PG Writer**: Applies operations to PostgreSQL
+4. **Binlog Reader** (MySQL): Monitors MySQL general_log for changes
+5. **Database Writers**: Applies operations to MySQL or PostgreSQL
 6. **Stats Logger**: Tracks operations in SQLite
 7. **Web Server**: Axum HTTP server with authentication
-8. **Routine Migrator**: Converts database objects
 
 ### Data Flow
 ```
-MySQL → Schema Reader → Table Creator → PostgreSQL
+Source DB → Schema Reader → Table Creator → Target DB
   ↓                                         ↑
-General Log → Binlog Reader → Event Queue → PG Writer
+General Log → Binlog Reader → Event Queue → Writer
                      ↓
               Stats Logger → SQLite → Chart API → Web UI
 ```
@@ -425,7 +400,7 @@ Contributions are welcome! Please:
 
 ## 📄 License
 
-[Your License Here]
+MIT License
 
 ## 🙋 Support
 
@@ -441,10 +416,15 @@ Built with:
 - Axum web framework
 - sqlx database toolkit
 - Chart.js for visualizations
-- Google Gemini AI for intelligent SQL conversion
 
 ---
 
 **Version**: 1.0.0  
-**Author**: [Your Name]  
 **Last Updated**: December 2025
+
+## ⚠️ Important Notes
+
+- **Same-Type Only**: This tool only supports synchronization between databases of the same type (MySQL→MySQL or PostgreSQL→PostgreSQL)
+- **Real-time Sync**: Currently only available for MySQL using general_log monitoring
+- **Performance**: For large databases, consider using initial sync during off-peak hours
+- **Testing**: Always test in a development environment before production use

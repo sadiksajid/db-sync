@@ -1,6 +1,22 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DatabaseType {
+    MySQL,
+    PostgreSQL,
+}
+
+impl DatabaseType {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "mysql" => Some(DatabaseType::MySQL),
+            "postgresql" | "postgres" | "psql" => Some(DatabaseType::PostgreSQL),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMode {
     Initial,
@@ -21,29 +37,58 @@ impl SyncMode {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub mysql_url: String,
-    pub pg_url: String,
+    pub source_url: String,
+    pub target_url: String,
+    pub source_type: DatabaseType,
+    pub target_type: DatabaseType,
     pub sync_mode: SyncMode,
     pub batch_size: usize,
-    pub mysql_database: String,
+    pub source_database: String,
+    pub target_database: String,
+    // Connection details for display/logging and mysqldump
+    pub source_host: String,
+    pub source_port: u16,
+    pub source_username: String,
+    pub source_password: String,
+    pub target_host: String,
+    pub target_port: u16,
+    pub target_username: String,
+    pub target_password: String,
 }
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         dotenvy::dotenv().ok();
 
-        // Build MySQL URL - support multiple naming conventions
-        let mysql_url = if env::var("MYSQL_URL").is_ok() {
-            env::var("MYSQL_URL")?
+        // Determine source and target database types
+        let source_type = env::var("SOURCE_DB_TYPE")
+            .ok()
+            .and_then(|s| DatabaseType::from_str(&s))
+            .unwrap_or(DatabaseType::MySQL);
+
+        let target_type = env::var("TARGET_DB_TYPE")
+            .ok()
+            .and_then(|s| DatabaseType::from_str(&s))
+            .unwrap_or(DatabaseType::MySQL);
+
+        // Build source URL based on type
+        let source_url = if env::var("SOURCE_DB_URL").is_ok() {
+            env::var("SOURCE_DB_URL")?
         } else {
-            build_mysql_url()?
+            match source_type {
+                DatabaseType::MySQL => build_mysql_url("SOURCE")?,
+                DatabaseType::PostgreSQL => build_pg_url("SOURCE")?,
+            }
         };
 
-        // Build PostgreSQL URL - support multiple naming conventions
-        let pg_url = if env::var("PG_URL").is_ok() {
-            env::var("PG_URL")?
+        // Build target URL based on type
+        let target_url = if env::var("TARGET_DB_URL").is_ok() {
+            env::var("TARGET_DB_URL")?
         } else {
-            build_pg_url()?
+            match target_type {
+                DatabaseType::MySQL => build_mysql_url("TARGET")?,
+                DatabaseType::PostgreSQL => build_pg_url("TARGET")?,
+            }
         };
 
         let sync_mode = env::var("SYNC_MODE")
@@ -56,77 +101,94 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(1000);
 
-        // Extract database name from MySQL URL
-        let mysql_database = extract_database_name(&mysql_url)?;
+        // Extract database names from URLs
+        let source_database = extract_database_name(&source_url)?;
+        let target_database = extract_database_name(&target_url)?;
+        
+        // Extract connection details for display and mysqldump
+        let source_host = env::var(format!("SOURCE_DB_HOST")).unwrap_or_default();
+        let source_port = env::var(format!("SOURCE_DB_PORT"))
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3306);
+        let source_username = env::var(format!("SOURCE_DB_USERNAME")).unwrap_or_default();
+        let source_password = env::var(format!("SOURCE_DB_PASSWORD")).unwrap_or_default();
+        
+        let target_host = env::var(format!("TARGET_DB_HOST")).unwrap_or_default();
+        let target_port = env::var(format!("TARGET_DB_PORT"))
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3306);
+        let target_username = env::var(format!("TARGET_DB_USERNAME")).unwrap_or_default();
+        let target_password = env::var(format!("TARGET_DB_PASSWORD")).unwrap_or_default();
 
         Ok(Config {
-            mysql_url,
-            pg_url,
+            source_url,
+            target_url,
+            source_type,
+            target_type,
             sync_mode,
             batch_size,
-            mysql_database,
+            source_database,
+            target_database,
+            source_host,
+            source_port,
+            source_username,
+            source_password,
+            target_host,
+            target_port,
+            target_username,
+            target_password,
         })
     }
 }
 
-fn build_mysql_url() -> anyhow::Result<String> {
-    // Support multiple patterns (in order of preference):
-    // 1. MYSQL_* variables
-    // 2. DB_* variables (for MySQL)
+fn build_mysql_url(prefix: &str) -> anyhow::Result<String> {
+    // Support SOURCE_* and TARGET_* prefixed variables
+    // Example: SOURCE_DB_HOST, TARGET_DB_HOST
     
-    let host = env::var("MYSQL_HOST")
-        .or_else(|_| env::var("DB_HOST"))
-        .map_err(|_| anyhow::anyhow!("MYSQL_HOST or DB_HOST must be set"))?;
+    let host = env::var(format!("{}_DB_HOST", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_HOST must be set", prefix))?;
     
-    let port = env::var("MYSQL_PORT")
-        .or_else(|_| env::var("DB_PORT"))
+    let port = env::var(format!("{}_DB_PORT", prefix))
         .unwrap_or_else(|_| "3306".to_string());
     
-    let user = env::var("MYSQL_USER")
-        .or_else(|_| env::var("DB_USERNAME"))
-        .map_err(|_| anyhow::anyhow!("MYSQL_USER or DB_USERNAME must be set"))?;
+    let user = env::var(format!("{}_DB_USERNAME", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_USERNAME must be set", prefix))?;
     
-    let password = env::var("MYSQL_PASSWORD")
-        .or_else(|_| env::var("DB_PASSWORD"))
-        .map_err(|_| anyhow::anyhow!("MYSQL_PASSWORD or DB_PASSWORD must be set"))?;
+    let password = env::var(format!("{}_DB_PASSWORD", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_PASSWORD must be set", prefix))?;
     
-    let database = env::var("MYSQL_DATABASE")
-        .or_else(|_| env::var("DB_DATABASE"))
-        .map_err(|_| anyhow::anyhow!("MYSQL_DATABASE or DB_DATABASE must be set"))?;
+    let database = env::var(format!("{}_DB_DATABASE", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_DATABASE must be set", prefix))?;
 
     Ok(format!("mysql://{}:{}@{}:{}/{}", user, password, host, port, database))
 }
 
-fn build_pg_url() -> anyhow::Result<String> {
-    // Support multiple patterns (in order of preference):
-    // 1. POSTGRES_* variables
-    // 2. PSQL_DB_* variables (for PostgreSQL)
+fn build_pg_url(prefix: &str) -> anyhow::Result<String> {
+    // Support SOURCE_* and TARGET_* prefixed variables
+    // Example: SOURCE_DB_HOST, TARGET_DB_HOST
     
-    let host = env::var("POSTGRES_HOST")
-        .or_else(|_| env::var("PSQL_DB_HOST"))
-        .map_err(|_| anyhow::anyhow!("POSTGRES_HOST or PSQL_DB_HOST must be set"))?;
+    let host = env::var(format!("{}_DB_HOST", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_HOST must be set", prefix))?;
     
-    let port = env::var("POSTGRES_PORT")
-        .or_else(|_| env::var("PSQL_DB_PORT"))
+    let port = env::var(format!("{}_DB_PORT", prefix))
         .unwrap_or_else(|_| "5432".to_string());
     
-    let user = env::var("POSTGRES_USER")
-        .or_else(|_| env::var("PSQL_DB_USERNAME"))
-        .map_err(|_| anyhow::anyhow!("POSTGRES_USER or PSQL_DB_USERNAME must be set"))?;
+    let user = env::var(format!("{}_DB_USERNAME", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_USERNAME must be set", prefix))?;
     
-    let password = env::var("POSTGRES_PASSWORD")
-        .or_else(|_| env::var("PSQL_DB_PASSWORD"))
-        .map_err(|_| anyhow::anyhow!("POSTGRES_PASSWORD or PSQL_DB_PASSWORD must be set"))?;
+    let password = env::var(format!("{}_DB_PASSWORD", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_PASSWORD must be set", prefix))?;
     
-    let database = env::var("POSTGRES_DB")
-        .or_else(|_| env::var("PSQL_DB_DATABASE"))
-        .map_err(|_| anyhow::anyhow!("POSTGRES_DB or PSQL_DB_DATABASE must be set"))?;
+    let database = env::var(format!("{}_DB_DATABASE", prefix))
+        .map_err(|_| anyhow::anyhow!("{}_DB_DATABASE must be set", prefix))?;
 
     Ok(format!("postgres://{}:{}@{}:{}/{}", user, password, host, port, database))
 }
 
 fn extract_database_name(url: &str) -> anyhow::Result<String> {
-    // Parse mysql://user:pass@host:port/database
+    // Parse mysql://user:pass@host:port/database or postgres://user:pass@host:port/database
     if let Some(db_start) = url.rfind('/') {
         let db_part = &url[db_start + 1..];
         if let Some(query_start) = db_part.find('?') {
@@ -135,7 +197,7 @@ fn extract_database_name(url: &str) -> anyhow::Result<String> {
             Ok(db_part.to_string())
         }
     } else {
-        Err(anyhow::anyhow!("Invalid MySQL URL format"))
+        Err(anyhow::anyhow!("Invalid database URL format"))
     }
 }
 

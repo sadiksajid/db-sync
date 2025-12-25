@@ -1,5 +1,5 @@
 [package]
-name = "mysql_psql_proxy"
+name = "db_sync_proxy"
 version = "0.1.0"
 edition = "2021"
 

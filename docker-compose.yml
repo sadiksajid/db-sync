@@ -1,47 +1,40 @@
 version: '3.8'
 
 services:
-  proxy:
+  db-sync:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mysql_psql_proxy
+    container_name: db_sync_proxy
     environment:
-      # Option 1: Use full connection URLs
-      # MYSQL_URL: mysql://mysql_user:mysql_password@mysql:3306/source_db
-      # PG_URL: postgres://postgres:postgrespassword@postgres:5432/target_db
+      # IMPORTANT: When running in --web-ui mode, database configuration
+      # comes from the SQLite database (configured via Web UI).
+      # DO NOT set SOURCE_DB_* or TARGET_DB_* environment variables here
+      # as they will override the Web UI configuration!
       
-      # Option 2: Use individual credential environment variables (MYSQL_* / POSTGRES_*)
-      # MYSQL_HOST: mysql
-      # MYSQL_PORT: 3306
-      # MYSQL_USER: mysql_user
-      # MYSQL_PASSWORD: mysql_password
-      # MYSQL_DATABASE: source_db
-      # POSTGRES_HOST: postgres
-      # POSTGRES_PORT: 5432
-      # POSTGRES_USER: postgres
-      # POSTGRES_PASSWORD: postgrespassword
-      # POSTGRES_DB: target_db
-      
-      # Option 3: Use DB_* for MySQL and PSQL_DB_* for PostgreSQL
-      # MySQL configuration
-      DB_HOST: 192.168.1.237
-      DB_PORT: 3306
-      DB_DATABASE: CODPARTNER_APP_TEST
-      DB_USERNAME: root
-      DB_PASSWORD: password
-      
-      # PostgreSQL configuration
-      PSQL_DB_HOST: 192.168.1.237
-      PSQL_DB_PORT: 5432
-      PSQL_DB_DATABASE: CODPARTNER_APP_TEST
-      PSQL_DB_USERNAME: postgres
-      PSQL_DB_PASSWORD: postgres
-      
-      # Sync configuration
-      SYNC_MODE: both
-      BATCH_SIZE: 1000
+      # Only set logging level
       RUST_LOG: info
-    command: ["--full-sync"]
+      
+      # NOTE: If you want to run CLI mode (not web-ui), uncomment these:
+      # SOURCE_DB_TYPE: mysql
+      # TARGET_DB_TYPE: mysql
+      # SOURCE_DB_HOST: host.docker.internal
+      # SOURCE_DB_PORT: 3306
+      # SOURCE_DB_DATABASE: testing
+      # SOURCE_DB_USERNAME: root
+      # SOURCE_DB_PASSWORD: password
+      # TARGET_DB_HOST: host.docker.internal
+      # TARGET_DB_PORT: 3306
+      # TARGET_DB_DATABASE: testing2
+      # TARGET_DB_USERNAME: root
+      # TARGET_DB_PASSWORD: password
+      # SYNC_MODE: initial
+      # BATCH_SIZE: 1000
+    command: ["--web-ui"]  # Web UI mode - config from SQLite database
     restart: unless-stopped
-
+    ports:
+      - "5009:5009"
+    volumes:
+      - ./db_sync_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Enable access to host machine

@@ -210,10 +210,10 @@ async fn start_sync(State(state): State<AppState>) -> Json<ApiResponse<String>> 
     let config = state.config.read().await.clone();
     
     // Validate configuration
-    if config.db_host.is_empty()
-        || config.db_database.is_empty()
-        || config.psql_db_host.is_empty()
-        || config.psql_db_database.is_empty()
+    if config.source_db_host.is_empty()
+        || config.source_db_database.is_empty()
+        || config.target_db_host.is_empty()
+        || config.target_db_database.is_empty()
     {
         return Json(ApiResponse::error(
             "Invalid configuration: Please fill in all required fields",
@@ -262,10 +262,14 @@ async fn test_connection(
         .and_then(|v| v.as_str())
         .unwrap_or("mysql");
     
+    info!("Test connection request - Type: {}", db_type);
+    info!("Payload config: {:?}", payload.get("config"));
+    
     // Parse config from payload instead of reading from state
     let config: SyncConfig = match serde_json::from_value(payload.get("config").cloned().unwrap_or(serde_json::json!({}))) {
         Ok(cfg) => cfg,
         Err(e) => {
+            error!("Failed to parse config: {}", e);
             return Json(ApiResponse::error(format!("Invalid configuration: {}", e)));
         }
     };
@@ -281,23 +285,39 @@ async fn test_connection(
             format!("{} connection successful", db_type.to_uppercase()),
             Some("connected".to_string()),
         )),
-        Err(e) => Json(ApiResponse::error(format!(
-            "{} connection failed: {}",
-            db_type.to_uppercase(),
-            e
-        ))),
+        Err(e) => {
+            error!("Connection test failed: {}", e);
+            Json(ApiResponse::error(format!(
+                "{} connection failed: {}",
+                db_type.to_uppercase(),
+                e
+            )))
+        }
     }
 }
 
 async fn test_mysql_connection(config: &SyncConfig) -> anyhow::Result<()> {
+    // Try new field names first (source_db_* or target_db_*), then fall back to old names (db_* or psql_db_*)
+    let (host, port, database, username, password) = if !config.source_db_host.is_empty() {
+        (&config.source_db_host, config.source_db_port, &config.source_db_database, &config.source_db_username, &config.source_db_password)
+    } else if !config.target_db_host.is_empty() {
+        (&config.target_db_host, config.target_db_port, &config.target_db_database, &config.target_db_username, &config.target_db_password)
+    } else if !config.db_host.is_empty() {
+        (&config.db_host, config.db_port, &config.db_database, &config.db_username, &config.db_password)
+    } else {
+        (&config.psql_db_host, config.psql_db_port, &config.psql_db_database, &config.psql_db_username, &config.psql_db_password)
+    };
+    
+    if host.is_empty() || database.is_empty() || username.is_empty() {
+        return Err(anyhow::anyhow!("Missing required database connection fields"));
+    }
+    
     let url = format!(
         "mysql://{}:{}@{}:{}/{}",
-        config.db_username,
-        config.db_password,
-        config.db_host,
-        config.db_port,
-        config.db_database
+        username, password, host, port, database
     );
+    
+    info!("Testing MySQL connection to: {}@{}:{}/{}", username, host, port, database);
     
     let pool = sqlx::mysql::MySqlPool::connect(&url).await?;
     sqlx::query("SELECT 1").fetch_one(&pool).await?;
@@ -307,14 +327,27 @@ async fn test_mysql_connection(config: &SyncConfig) -> anyhow::Result<()> {
 }
 
 async fn test_postgres_connection(config: &SyncConfig) -> anyhow::Result<()> {
+    // Try new field names first (source_db_* or target_db_*), then fall back to old names (db_* or psql_db_*)
+    let (host, port, database, username, password) = if !config.source_db_host.is_empty() {
+        (&config.source_db_host, config.source_db_port, &config.source_db_database, &config.source_db_username, &config.source_db_password)
+    } else if !config.target_db_host.is_empty() {
+        (&config.target_db_host, config.target_db_port, &config.target_db_database, &config.target_db_username, &config.target_db_password)
+    } else if !config.psql_db_host.is_empty() {
+        (&config.psql_db_host, config.psql_db_port, &config.psql_db_database, &config.psql_db_username, &config.psql_db_password)
+    } else {
+        (&config.db_host, config.db_port, &config.db_database, &config.db_username, &config.db_password)
+    };
+    
+    if host.is_empty() || database.is_empty() || username.is_empty() {
+        return Err(anyhow::anyhow!("Missing required database connection fields"));
+    }
+    
     let url = format!(
         "postgresql://{}:{}@{}:{}/{}",
-        config.psql_db_username,
-        config.psql_db_password,
-        config.psql_db_host,
-        config.psql_db_port,
-        config.psql_db_database
+        username, password, host, port, database
     );
+    
+    info!("Testing PostgreSQL connection to: {}@{}:{}/{}", username, host, port, database);
     
     let pool = sqlx::postgres::PgPool::connect(&url).await?;
     sqlx::query("SELECT 1").fetch_one(&pool).await?;
@@ -328,7 +361,39 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
     
     state.add_log("Starting synchronization...".to_string()).await;
     
-    let config = state.config.read().await.clone();
+    // Load web config from state
+    let web_config = state.config.read().await.clone();
+    
+    // DEBUG: Log the loaded configuration
+    state.add_log(format!("📋 Loaded configuration from SQLite:")).await;
+    state.add_log(format!("  db_type: '{}'", &web_config.db_type)).await;
+    state.add_log(format!("  source_db_host: '{}'", &web_config.source_db_host)).await;
+    state.add_log(format!("  source_db_port: {}", web_config.source_db_port)).await;
+    state.add_log(format!("  source_db_database: '{}'", &web_config.source_db_database)).await;
+    state.add_log(format!("  source_db_username: '{}'", &web_config.source_db_username)).await;
+    
+    // Get all slave configs for PARALLEL sync
+    state.add_log(format!("🔄 Preparing configs for all slave databases...")).await;
+    let slave_configs = match web_config.to_slave_configs() {
+        Ok(configs) => {
+            state.add_log(format!("✓ Found {} slave database(s) to sync", configs.len())).await;
+            for (idx, cfg) in configs.iter().enumerate() {
+                state.add_log(format!("  Slave #{}: {}@{}:{}/{}", 
+                    idx + 1, 
+                    cfg.target_username, 
+                    cfg.target_host, 
+                    cfg.target_port, 
+                    cfg.target_database
+                )).await;
+            }
+            configs
+        }
+        Err(e) => {
+            let error_msg = format!("Configuration error: {}", e);
+            state.add_log(error_msg.clone()).await;
+            return Err(e);
+        }
+    };
     
     // Update stats
     {
@@ -336,57 +401,91 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
         stats.start_time = Some(Utc::now().to_rfc3339());
     }
     
-    // Set environment variables for the sync process
-    std::env::set_var("DB_HOST", &config.db_host);
-    std::env::set_var("DB_PORT", config.db_port.to_string());
-    std::env::set_var("DB_DATABASE", &config.db_database);
-    std::env::set_var("DB_USERNAME", &config.db_username);
-    std::env::set_var("DB_PASSWORD", &config.db_password);
-    std::env::set_var("PSQL_DB_HOST", &config.psql_db_host);
-    std::env::set_var("PSQL_DB_PORT", config.psql_db_port.to_string());
-    std::env::set_var("PSQL_DB_DATABASE", &config.psql_db_database);
-    std::env::set_var("PSQL_DB_USERNAME", &config.psql_db_username);
-    std::env::set_var("PSQL_DB_PASSWORD", &config.psql_db_password);
-    std::env::set_var("BATCH_SIZE", config.batch_size.to_string());
-    std::env::set_var("POLL_INTERVAL_SECS", config.poll_interval_secs.to_string());
-    
-    if let Some(api_key) = &config.gemini_api_key {
-        std::env::set_var("GEMINI_API_KEY", api_key);
-    }
-    std::env::set_var("GEMINI_MODEL", &config.gemini_model);
-    
     // Determine which sync mode to run
-    let sync_mode = &config.sync_mode;
+    let sync_mode = &web_config.sync_mode;
     state.add_log(format!("📋 Selected sync mode: {}", sync_mode)).await;
+    state.add_log(format!("🚀 Starting PARALLEL sync to {} slave(s)...", slave_configs.len())).await;
     
-    let result = match sync_mode.as_str() {
-        "initial-sync" => {
-            state.add_log("▶️  Running initial synchronization (schema + data)...".to_string()).await;
-            crate::run_initial_only_for_ui(state.clone()).await
-        }
-        "realtime-sync" => {
-            state.add_log("▶️  Running real-time synchronization (binlog monitoring only)...".to_string()).await;
-            crate::run_realtime_only_for_ui(state.clone()).await
-        }
-        _ => {
-            state.add_log("▶️  Running full synchronization (initial + catch-up + realtime)...".to_string()).await;
-            crate::run_full_sync_for_ui(state.clone()).await
-        }
-    };
+    // Run sync to ALL slaves in PARALLEL using tokio::spawn
+    let mut handles = vec![];
     
-    match result {
-        Ok(_) => {
-            state.add_log("Synchronization completed successfully".to_string()).await;
-            *state.status.write().await = SyncStatus::Idle;
-        }
-        Err(e) => {
-            let error_msg = format!("Synchronization failed: {}", e);
-            state.add_log(error_msg.clone()).await;
-            *state.status.write().await = SyncStatus::Error(e.to_string());
+    for (idx, slave_config) in slave_configs.into_iter().enumerate() {
+        let slave_num = idx + 1;
+        let state_clone = state.clone();
+        let sync_mode_clone = sync_mode.clone();
+        let slave_db = slave_config.target_database.clone();
+        
+        // Spawn a separate task for each slave
+        let handle = tokio::spawn(async move {
+            state_clone.add_log(format!("🔵 [Slave #{}] Starting sync to '{}'...", slave_num, slave_db)).await;
+            
+            let result = match sync_mode_clone.as_str() {
+                "initial-sync" => {
+                    crate::run_initial_only_for_ui(slave_config, state_clone.clone()).await
+                }
+                "realtime-sync" => {
+                    crate::run_realtime_only_for_ui(slave_config, state_clone.clone()).await
+                }
+                _ => {
+                    crate::run_full_sync_for_ui(slave_config, state_clone.clone()).await
+                }
+            };
+            
+            match result {
+                Ok(_) => {
+                    state_clone.add_log(format!("✅ [Slave #{}] Sync completed successfully for '{}'", slave_num, slave_db)).await;
+                    Ok(())
+                }
+                Err(e) => {
+                    state_clone.add_log(format!("❌ [Slave #{}] Sync failed for '{}': {}", slave_num, slave_db, e)).await;
+                    Err(e)
+                }
+            }
+        });
+        
+        handles.push(handle);
+    }
+    
+    // Wait for ALL slaves to complete
+    state.add_log("⏳ Waiting for all slave syncs to complete...".to_string()).await;
+    
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut errors = Vec::new();
+    
+    for (idx, handle) in handles.into_iter().enumerate() {
+        match handle.await {
+            Ok(Ok(_)) => {
+                success_count += 1;
+            }
+            Ok(Err(e)) => {
+                error_count += 1;
+                errors.push(format!("Slave #{}: {}", idx + 1, e));
+            }
+            Err(e) => {
+                error_count += 1;
+                errors.push(format!("Slave #{}: Task panicked: {}", idx + 1, e));
+            }
         }
     }
     
-    Ok(())
+    // Report final status
+    state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
+    state.add_log(format!("📊 PARALLEL SYNC RESULTS:")).await;
+    state.add_log(format!("  ✅ Successful: {}", success_count)).await;
+    state.add_log(format!("  ❌ Failed: {}", error_count)).await;
+    state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
+    
+    if error_count == 0 {
+        state.add_log("🎉 All slave databases synchronized successfully!".to_string()).await;
+        *state.status.write().await = SyncStatus::Idle;
+        Ok(())
+    } else {
+        let error_summary = errors.join("; ");
+        state.add_log(format!("⚠️  Some syncs failed: {}", error_summary)).await;
+        *state.status.write().await = SyncStatus::Error(error_summary.clone());
+        Err(anyhow::anyhow!("Sync failures: {}", error_summary))
+    }
 }
 
 // Authentication middleware

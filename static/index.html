@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MySQL to PostgreSQL Sync - Control Panel</title>
+    <title>Database Sync Proxy - Control Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
@@ -119,16 +119,18 @@
     </style>
 </head>
 <body class="bg-surface-0 min-h-screen">
-    <div class="max-w-7xl mx-auto">
+    <div class="flex">
+        <!-- Main Content Area -->
+        <div class="flex-1 mr-80">
         <!-- Header -->
         <header class="bg-surface-10 backdrop-blur-lg px-12 py-8 border-b border-primary-0/20 shadow-2xl">
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-primary-0 text-4xl font-bold mb-2 tracking-tight flex items-center gap-3">
                         <span class="iconify" data-icon="solar:transfer-horizontal-bold" data-width="40"></span>
-                        MySQL to PostgreSQL Sync
+                        Database Sync Proxy
                     </h1>
-                    <p class="text-primary-20 text-lg opacity-90">Real-time Database Migration & Synchronization Control Panel</p>
+                    <p class="text-primary-20 text-lg opacity-90">Same-Type Database Synchronization (MySQL→MySQL or PostgreSQL→PostgreSQL)</p>
                 </div>
                 <div class="flex items-center gap-3">
                     <button onclick="showSection('profile'); loadProfile();" class="px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-2">
@@ -215,6 +217,23 @@
                             </p>
                         </div>
                     </div>
+                    
+                    <!-- Reset Database Option -->
+                    <div class="mb-6 p-4 bg-surface-20 rounded-xl border border-danger-0/30">
+                        <label class="flex items-center cursor-pointer group">
+                            <input type="checkbox" id="reset-database" class="w-5 h-5 rounded border-2 border-danger-0 text-danger-0 focus:ring-2 focus:ring-danger-0 focus:ring-offset-2 focus:ring-offset-surface-10 transition-all cursor-pointer">
+                            <span class="ml-3 flex-1">
+                                <span class="text-danger-0 font-semibold flex items-center gap-2">
+                                    <span class="iconify" data-icon="solar:trash-bin-trash-bold" data-width="18"></span>
+                                    Reset Slave Database(s) Before Sync
+                                </span>
+                                <span class="block text-xs text-gray-400 mt-1">
+                                    ⚠️ Warning: This will DROP and recreate all slave databases before syncing. All existing data in slaves will be lost!
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                    
                     <div class="flex gap-3 flex-wrap">
                         <button onclick="startSync()" class="flex-1 min-w-[140px] px-6 py-3 bg-gradient-to-r from-success-0 to-success-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-success-10/50 transition-all duration-300 flex items-center justify-center gap-2">
                             <span class="iconify" data-icon="solar:play-bold" data-width="20"></span>
@@ -251,7 +270,123 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Connected Databases Section -->
+            <div class="mt-6">
+                <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
+                    <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:server-bold" data-width="28"></span>
+                        Connected Databases
+                    </h2>
+                    
+                    <div id="databases-overview" class="space-y-6">
+                        <!-- Database Type Badge -->
+                        <div class="flex items-center justify-center mb-4">
+                            <div id="db-type-badge" class="px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-bold rounded-full text-lg shadow-lg">
+                                <span class="iconify inline-block mr-2" data-icon="solar:server-bold" data-width="24"></span>
+                                <span id="db-type-text">Not Configured</span>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Source Database (Master) -->
+                            <div class="bg-gradient-to-br from-success-0/20 to-success-10/20 border-2 border-success-0 rounded-xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-success-20 font-bold text-xl flex items-center gap-2">
+                                        <span class="iconify" data-icon="solar:database-bold" data-width="24"></span>
+                                        Source Database (Master)
+                                    </h3>
+                                    <div id="source-status-indicator" class="flex items-center gap-2">
+                                        <span class="inline-block w-3 h-3 rounded-full bg-gray-500 shadow-lg"></span>
+                                        <span class="text-xs font-semibold text-gray-400">Unknown</span>
+                                    </div>
+                                </div>
+                                <div id="source-database-info" class="space-y-2 text-gray-300">
+                                    <div class="flex items-start gap-2">
+                                        <span class="iconify mt-1 text-success-20" data-icon="solar:server-bold" data-width="16"></span>
+                                        <div>
+                                            <span class="text-gray-400 text-sm">Host:</span>
+                                            <span id="source-host" class="ml-2 font-mono font-semibold">-</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-2">
+                                        <span class="iconify mt-1 text-success-20" data-icon="solar:plain-2-bold" data-width="16"></span>
+                                        <div>
+                                            <span class="text-gray-400 text-sm">Port:</span>
+                                            <span id="source-port" class="ml-2 font-mono font-semibold">-</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-2">
+                                        <span class="iconify mt-1 text-success-20" data-icon="solar:database-bold" data-width="16"></span>
+                                        <div>
+                                            <span class="text-gray-400 text-sm">Database:</span>
+                                            <span id="source-database" class="ml-2 font-mono font-semibold">-</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-2">
+                                        <span class="iconify mt-1 text-success-20" data-icon="solar:user-bold" data-width="16"></span>
+                                        <div>
+                                            <span class="text-gray-400 text-sm">Username:</span>
+                                            <span id="source-username" class="ml-2 font-mono font-semibold">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="source-not-configured" class="text-center py-4 text-gray-400">
+                                    <span class="iconify" data-icon="solar:close-circle-bold" data-width="48" class="opacity-30 mb-2"></span>
+                                    <p class="text-sm">Source database not configured</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Slave Databases -->
+                            <div class="bg-gradient-to-br from-warning-0/20 to-warning-10/20 border-2 border-warning-0 rounded-xl p-6">
+                                <h3 class="text-warning-20 font-bold text-xl flex items-center gap-2 mb-4">
+                                    <span class="iconify" data-icon="solar:database-bold" data-width="24"></span>
+                                    Slave Databases (Targets)
+                                    <span id="slaves-count-badge" class="ml-auto text-sm px-3 py-1 bg-warning-0 text-white rounded-full">0</span>
+                                </h3>
+                                <div id="slaves-overview-list" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                    <!-- Slave databases will be listed here -->
+                                </div>
+                                <div id="slaves-not-configured" class="text-center py-4 text-gray-400">
+                                    <span class="iconify" data-icon="solar:close-circle-bold" data-width="48" class="opacity-30 mb-2"></span>
+                                    <p class="text-sm">No slave databases configured</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="no-databases-configured" class="text-center py-8 text-gray-400 border-2 border-dashed border-surface-30 rounded-xl">
+                            <span class="iconify" data-icon="solar:settings-bold" data-width="64" class="opacity-30 mb-3"></span>
+                            <p class="text-lg font-semibold mb-2">No databases configured yet</p>
+                            <p class="text-sm mb-4">Configure your source and slave databases to start synchronization</p>
+                            <button onclick="showSection('settings')" class="px-6 py-3 bg-primary-0 hover:bg-primary-10 text-white font-semibold rounded-xl transition-all">
+                                Go to Settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
         </div>
+        </div>
+        
+        <!-- Right Sidebar for Ads -->
+        <aside class="w-80 bg-surface-10 border-l border-primary-0/20 fixed right-0 top-0 h-screen overflow-y-auto scrollbar-custom">
+            <div class="p-4 sticky top-0 bg-surface-10 z-10 border-b border-primary-0/20">
+                <h3 class="text-lg text-primary-0 font-bold flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:star-bold" data-width="20"></span>
+                    Sponsored Tools
+                </h3>
+                <span class="text-xs text-gray-500 mt-1 block">Ads</span>
+            </div>
+            <div id="ads-container" class="p-4 space-y-4">
+                <!-- Fallback content while loading -->
+                <div class="text-center text-gray-400 py-8">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-0"></div>
+                    <p class="mt-2 text-sm">Loading...</p>
+                </div>
+            </div>
+        </aside>
+    </div>
 
         <!-- SETTINGS SECTION -->
         <div id="section-settings" class="section hidden p-8 animate-fade-in">
@@ -261,74 +396,79 @@
                     Configuration
                 </h2>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- MySQL Configuration -->
-                    <div>
-                        <div class="bg-surface-20 px-5 py-3 rounded-xl mb-5 font-semibold text-primary-20 border-l-4 border-primary-0">
-                            MySQL Configuration
+                <!-- Database Type Selector -->
+                <div class="mb-6 bg-gradient-to-r from-primary-0/10 to-primary-10/10 border-2 border-primary-0/30 rounded-xl p-6">
+                    <label class="block text-primary-20 font-bold mb-3 text-lg tracking-wide flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:server-bold" data-width="24"></span>
+                        Database Type
+                    </label>
+                    <select id="db_type" class="w-full px-5 py-4 border-2 border-primary-0/40 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white text-lg font-semibold focus:bg-surface-20">
+                        <option value="mysql">MySQL</option>
+                        <option value="postgresql">PostgreSQL</option>
+                    </select>
+                    <p class="mt-2 text-gray-400 text-sm">All databases (source and slaves) must be of the same type</p>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Slave Databases (Left) -->
+                    <div class="order-2 lg:order-1">
+                        <div class="bg-surface-20 px-5 py-3 rounded-xl mb-5 font-semibold text-warning-10 border-l-4 border-warning-10 flex items-center justify-between">
+                            <span class="flex items-center gap-2">
+                                <span class="iconify" data-icon="solar:database-bold" data-width="20"></span>
+                                Slave Databases (Targets)
+                            </span>
+                            <button onclick="addSlaveDatabase()" class="px-3 py-1 bg-primary-0 hover:bg-primary-10 text-white text-sm rounded-lg transition-all flex items-center gap-1">
+                                <span class="iconify" data-icon="solar:add-circle-bold" data-width="18"></span>
+                                Add Slave
+                            </button>
                         </div>
                         
-                        <div class="space-y-4">
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Host</label>
-                            <input type="text" id="db_host" placeholder="192.168.1.237" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                        <div id="slaves-container" class="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                            <!-- Slave databases will be added here dynamically -->
                         </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Port</label>
-                            <input type="number" id="db_port" placeholder="3306" value="3306" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Database</label>
-                            <input type="text" id="db_database" placeholder="my_database" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Username</label>
-                            <input type="text" id="db_username" placeholder="root" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Password</label>
-                            <input type="password" id="db_password" placeholder="password" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
-                            <button onclick="testConnection('mysql')" class="w-full px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-info-10/50 transition-all duration-300 flex items-center justify-center gap-2">
-                                <span class="iconify" data-icon="solar:test-tube-bold" data-width="20"></span>
-                                Test MySQL Connection
+                        
+                        <div id="no-slaves-message" class="text-center py-8 text-gray-400 border-2 border-dashed border-surface-30 rounded-xl">
+                            <span class="iconify" data-icon="solar:database-bold" data-width="48" class="opacity-30 mb-2"></span>
+                            <p class="text-sm">No slave databases configured</p>
+                            <button onclick="addSlaveDatabase()" class="mt-3 px-4 py-2 bg-primary-0 hover:bg-primary-10 text-white text-sm rounded-lg transition-all">
+                                Add Your First Slave
                             </button>
-                            <span id="mysql-connection-status"></span>
                         </div>
                     </div>
 
-                    <!-- PostgreSQL Configuration -->
-                    <div>
-                        <div class="bg-surface-20 px-5 py-3 rounded-xl mb-5 font-semibold text-primary-20 border-l-4 border-primary-0">
-                            PostgreSQL Configuration
+                    <!-- Source Database (Right) -->
+                    <div class="order-1 lg:order-2">
+                        <div class="bg-surface-20 px-5 py-3 rounded-xl mb-5 font-semibold text-primary-20 border-l-4 border-primary-0 flex items-center gap-2">
+                            <span class="iconify" data-icon="solar:server-2-bold" data-width="20"></span>
+                            Source Database (Master)
                         </div>
                         
                         <div class="space-y-4">
                         <div>
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Host</label>
-                            <input type="text" id="psql_db_host" placeholder="192.168.1.237" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                            <input type="text" id="source_db_host" placeholder="host.docker.internal or IP" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
                         <div>
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Port</label>
-                            <input type="number" id="psql_db_port" placeholder="5432" value="5432" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                            <input type="number" id="source_db_port" placeholder="3306 / 5432" value="3306" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
                         <div>
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Database</label>
-                            <input type="text" id="psql_db_database" placeholder="my_database" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                            <input type="text" id="source_db_database" placeholder="database_name" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
                         <div>
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Username</label>
-                            <input type="text" id="psql_db_username" placeholder="postgres" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                            <input type="text" id="source_db_username" placeholder="root / postgres" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
                         <div>
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Password</label>
-                            <input type="password" id="psql_db_password" placeholder="postgres" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
+                            <input type="password" id="source_db_password" placeholder="password" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
-                            <button onclick="testConnection('postgres')" class="w-full px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-info-10/50 transition-all duration-300 flex items-center justify-center gap-2">
+                            <button onclick="testConnection('source')" class="w-full px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-info-10/50 transition-all duration-300 flex items-center justify-center gap-2">
                                 <span class="iconify" data-icon="solar:test-tube-bold" data-width="20"></span>
-                                Test PostgreSQL Connection
+                                Test Source Connection
                             </button>
-                            <span id="postgres-connection-status"></span>
+                            <span id="source-connection-status"></span>
                         </div>
                     </div>
                 </div>
@@ -705,7 +845,7 @@
             
             const descriptions = {
                 'full-sync': '<strong>Recommended for first-time setup.</strong> Performs complete schema migration, initial data transfer, catch-up sync, and then continues with real-time monitoring of changes.',
-                'initial-sync': '<strong>One-time migration.</strong> Transfers database schema and all data from MySQL to PostgreSQL, then stops. Use this if you only need to copy data once.',
+                'initial-sync': '<strong>One-time migration.</strong> Transfers database schema and all data from source to target database, then stops. Use this if you only need to copy data once.',
                 'realtime-sync': '<strong>Live monitoring only.</strong> Assumes schema and data already exist in PostgreSQL. Only monitors and replicates new changes from MySQL binlog. Use this after initial migration is complete.'
             };
             
@@ -950,45 +1090,262 @@
                 
                 if (result.success && result.data) {
                     const config = result.data;
-                    document.getElementById('db_host').value = config.db_host || '';
-                    document.getElementById('db_port').value = config.db_port || 3306;
-                    document.getElementById('db_database').value = config.db_database || '';
-                    document.getElementById('db_username').value = config.db_username || '';
-                    document.getElementById('db_password').value = config.db_password || '';
-                    document.getElementById('psql_db_host').value = config.psql_db_host || '';
-                    document.getElementById('psql_db_port').value = config.psql_db_port || 5432;
-                    document.getElementById('psql_db_database').value = config.psql_db_database || '';
-                    document.getElementById('psql_db_username').value = config.psql_db_username || '';
-                    document.getElementById('psql_db_password').value = config.psql_db_password || '';
+                    
+                    // Database type
+                    document.getElementById('db_type').value = config.db_type || config.source_db_type || 'mysql';
+                    
+                    // Source database (backward compatible)
+                    document.getElementById('source_db_host').value = config.source_db_host || config.db_host || '';
+                    document.getElementById('source_db_port').value = config.source_db_port || config.db_port || 3306;
+                    document.getElementById('source_db_database').value = config.source_db_database || config.db_database || '';
+                    document.getElementById('source_db_username').value = config.source_db_username || config.db_username || '';
+                    document.getElementById('source_db_password').value = config.source_db_password || config.db_password || '';
+                    
+                    // Clear existing slaves
+                    const slavesContainer = document.getElementById('slaves-container');
+                    slavesContainer.innerHTML = '';
+                    slaveCounter = 0;
+                    
+                    // Load slaves from config
+                    const slaves = config.slaves || [];
+                    
+                    // Backward compatibility: if no slaves array, create one from old target config
+                    if (slaves.length === 0 && (config.target_db_host || config.psql_db_host)) {
+                        slaves.push({
+                            host: config.target_db_host || config.psql_db_host || '',
+                            port: config.target_db_port || config.psql_db_port || 3306,
+                            database: config.target_db_database || config.psql_db_database || '',
+                            username: config.target_db_username || config.psql_db_username || '',
+                            password: config.target_db_password || config.psql_db_password || ''
+                        });
+                    }
+                    
+                    // Add each slave
+                    slaves.forEach(slave => {
+                        addSlaveDatabase();
+                        const slaveId = slaveCounter;
+                        document.getElementById(`slave_host_${slaveId}`).value = slave.host || '';
+                        document.getElementById(`slave_port_${slaveId}`).value = slave.port || 3306;
+                        document.getElementById(`slave_database_${slaveId}`).value = slave.database || '';
+                        document.getElementById(`slave_username_${slaveId}`).value = slave.username || '';
+                        document.getElementById(`slave_password_${slaveId}`).value = slave.password || '';
+                    });
+                    
+                    // Other settings
                     document.getElementById('batch_size').value = config.batch_size || 100;
                     document.getElementById('poll_interval_secs').value = config.poll_interval_secs || 10;
                     document.getElementById('sync-mode').value = config.sync_mode || 'full-sync';
+                    document.getElementById('reset-database').checked = config.reset_database || false;
                     document.getElementById('gemini_api_key').value = config.gemini_api_key || '';
                     document.getElementById('gemini_model').value = config.gemini_model || 'gemini-2.0-flash-exp';
+                    
+                    updateSlavesVisibility();
+                    
+                    // Update databases overview on home page
+                    updateDatabasesOverview(config);
                 }
             } catch (error) {
                 console.error('Failed to load config:', error);
             }
         }
+        
+        function updateDatabasesOverview(config) {
+            // Get database type
+            const dbType = config.db_type || config.source_db_type || 'mysql';
+            const dbTypeText = dbType === 'mysql' ? 'MySQL' : 'PostgreSQL';
+            
+            // Update database type badge
+            document.getElementById('db-type-text').textContent = dbTypeText;
+            
+            // Get source database info
+            const sourceHost = config.source_db_host || config.db_host || '';
+            const sourcePort = config.source_db_port || config.db_port || '';
+            const sourceDatabase = config.source_db_database || config.db_database || '';
+            const sourceUsername = config.source_db_username || config.db_username || '';
+            
+            // Get slaves
+            const slaves = config.slaves || [];
+            
+            // Backward compatibility: if no slaves array, create one from old target config
+            if (slaves.length === 0 && (config.target_db_host || config.psql_db_host)) {
+                slaves.push({
+                    host: config.target_db_host || config.psql_db_host || '',
+                    port: config.target_db_port || config.psql_db_port || '',
+                    database: config.target_db_database || config.psql_db_database || '',
+                    username: config.target_db_username || config.psql_db_username || ''
+                });
+            }
+            
+            // Check if any configuration exists
+            const hasConfig = sourceHost || slaves.length > 0;
+            
+            // Show/hide the "no configuration" message
+            const noDatabasesMsg = document.getElementById('no-databases-configured');
+            const dbTypebadge = document.getElementById('db-type-badge').parentElement;
+            const sourceDatabaseDiv = document.querySelector('.bg-gradient-to-br.from-success-0\\/20');
+            const slavesDatabaseDiv = document.querySelector('.bg-gradient-to-br.from-warning-0\\/20');
+            
+            if (!hasConfig) {
+                noDatabasesMsg.classList.remove('hidden');
+                dbTypebadge.classList.add('hidden');
+                sourceDatabaseDiv.classList.add('hidden');
+                slavesDatabaseDiv.classList.add('hidden');
+                return;
+            }
+            
+            noDatabasesMsg.classList.add('hidden');
+            dbTypebadge.classList.remove('hidden');
+            sourceDatabaseDiv.classList.remove('hidden');
+            slavesDatabaseDiv.classList.remove('hidden');
+            
+            // Update source database info
+            const sourceInfo = document.getElementById('source-database-info');
+            const sourceNotConfigured = document.getElementById('source-not-configured');
+            
+            if (sourceHost) {
+                sourceInfo.classList.remove('hidden');
+                sourceNotConfigured.classList.add('hidden');
+                
+                document.getElementById('source-host').textContent = sourceHost;
+                document.getElementById('source-port').textContent = sourcePort;
+                document.getElementById('source-database').textContent = sourceDatabase;
+                document.getElementById('source-username').textContent = sourceUsername;
+                
+                // Update status indicator (we don't have real connection status, so show as configured)
+                const sourceStatus = document.getElementById('source-status-indicator');
+                sourceStatus.innerHTML = `
+                    <span class="inline-block w-3 h-3 rounded-full bg-success-0 shadow-lg animate-pulse"></span>
+                    <span class="text-xs font-semibold text-success-20">Configured</span>
+                `;
+            } else {
+                sourceInfo.classList.add('hidden');
+                sourceNotConfigured.classList.remove('hidden');
+            }
+            
+            // Update slaves overview
+            const slavesOverviewList = document.getElementById('slaves-overview-list');
+            const slavesNotConfigured = document.getElementById('slaves-not-configured');
+            const slavesCountBadge = document.getElementById('slaves-count-badge');
+            
+            slavesCountBadge.textContent = slaves.length;
+            
+            if (slaves.length > 0) {
+                slavesOverviewList.classList.remove('hidden');
+                slavesNotConfigured.classList.add('hidden');
+                
+                slavesOverviewList.innerHTML = slaves.map((slave, index) => `
+                    <div class="bg-surface-10 border border-warning-0/40 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-warning-20 font-semibold flex items-center gap-2">
+                                <span class="iconify" data-icon="solar:database-bold" data-width="18"></span>
+                                Slave #${index + 1}
+                            </h4>
+                            <div class="flex items-center gap-2">
+                                <span class="inline-block w-2 h-2 rounded-full bg-warning-0 shadow-lg animate-pulse"></span>
+                                <span class="text-xs font-semibold text-warning-20">Configured</span>
+                            </div>
+                        </div>
+                        <div class="space-y-1 text-sm text-gray-300">
+                            <div><span class="text-gray-400">Host:</span> <span class="font-mono ml-1">${slave.host}:${slave.port}</span></div>
+                            <div><span class="text-gray-400">Database:</span> <span class="font-mono ml-1">${slave.database}</span></div>
+                            <div><span class="text-gray-400">Username:</span> <span class="font-mono ml-1">${slave.username}</span></div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                slavesOverviewList.classList.add('hidden');
+                slavesNotConfigured.classList.remove('hidden');
+            }
+        }
 
         async function saveConfig() {
+            const dbType = document.getElementById('db_type').value;
+            
+            // Validate source database fields
+            const sourceHost = document.getElementById('source_db_host').value.trim();
+            const sourcePort = document.getElementById('source_db_port').value;
+            const sourceDatabase = document.getElementById('source_db_database').value.trim();
+            const sourceUsername = document.getElementById('source_db_username').value.trim();
+            const sourcePassword = document.getElementById('source_db_password').value;
+            
+            if (!sourceHost || !sourceDatabase || !sourceUsername) {
+                showAlert('danger', 'Error: Source database is missing required fields (host, database, username)!');
+                return;
+            }
+            
+            const slaves = getAllSlaves();
+            
+            // Validate at least one slave is configured
+            if (slaves.length === 0) {
+                showAlert('danger', 'Error: You must configure at least one slave database!');
+                return;
+            }
+            
+            // Validate all slaves have required fields
+            for (let i = 0; i < slaves.length; i++) {
+                const slave = slaves[i];
+                if (!slave.host || !slave.database || !slave.username) {
+                    showAlert('danger', `Error: Slave #${i+1} is missing required fields (host, database, username)`);
+                    return;
+                }
+            }
+            
             const config = {
-                db_host: document.getElementById('db_host').value,
-                db_port: parseInt(document.getElementById('db_port').value),
-                db_database: document.getElementById('db_database').value,
-                db_username: document.getElementById('db_username').value,
-                db_password: document.getElementById('db_password').value,
-                psql_db_host: document.getElementById('psql_db_host').value,
-                psql_db_port: parseInt(document.getElementById('psql_db_port').value),
-                psql_db_database: document.getElementById('psql_db_database').value,
-                psql_db_username: document.getElementById('psql_db_username').value,
-                psql_db_password: document.getElementById('psql_db_password').value,
+                // Database type (all databases use this)
+                db_type: dbType,
+                
+                // NEW STRUCTURE: Source database
+                source_db_type: dbType,
+                source_db_host: sourceHost,
+                source_db_port: parseInt(sourcePort),
+                source_db_database: sourceDatabase,
+                source_db_username: sourceUsername,
+                source_db_password: sourcePassword,
+                
+                // NEW STRUCTURE: Slave databases array
+                slaves: slaves,
+                
+                // BACKEND COMPATIBILITY: Old field names (db_* for source)
+                db_host: sourceHost,
+                db_port: parseInt(sourcePort),
+                db_database: sourceDatabase,
+                db_username: sourceUsername,
+                db_password: sourcePassword,
+                
+                // BACKEND COMPATIBILITY: Old field names (psql_db_* / target_db_* for first slave)
+                target_db_type: dbType,
+                target_db_host: slaves[0].host,
+                target_db_port: slaves[0].port,
+                target_db_database: slaves[0].database,
+                target_db_username: slaves[0].username,
+                target_db_password: slaves[0].password,
+                psql_db_host: slaves[0].host,
+                psql_db_port: slaves[0].port,
+                psql_db_database: slaves[0].database,
+                psql_db_username: slaves[0].username,
+                psql_db_password: slaves[0].password,
+                
+                // Other settings
                 batch_size: parseInt(document.getElementById('batch_size').value),
                 poll_interval_secs: parseInt(document.getElementById('poll_interval_secs').value),
                 sync_mode: document.getElementById('sync-mode').value,
+                reset_database: document.getElementById('reset-database').checked,  // Reset database flag
                 gemini_api_key: document.getElementById('gemini_api_key').value || null,
                 gemini_model: document.getElementById('gemini_model').value,
             };
+
+            // Debug: Log config being sent
+            console.log('Saving configuration:', config);
+            console.log('Required backend fields check:', {
+                db_host: config.db_host,
+                db_port: config.db_port,
+                db_database: config.db_database,
+                db_username: config.db_username,
+                psql_db_host: config.psql_db_host,
+                psql_db_port: config.psql_db_port,
+                psql_db_database: config.psql_db_database,
+                psql_db_username: config.psql_db_username
+            });
 
             try {
                 const response = await fetch('/api/config', {
@@ -999,38 +1356,96 @@
                 
                 const result = await response.json();
                 showAlert(result.success ? 'success' : 'danger', result.message);
+                
+                // Update the databases overview on home page after successful save
+                if (result.success) {
+                    updateDatabasesOverview(config);
+                }
             } catch (error) {
                 showAlert('danger', 'Failed to save configuration: ' + error.message);
             }
         }
 
-        async function testConnection(type) {
-            const statusElement = document.getElementById(type === 'mysql' ? 'mysql-connection-status' : 'postgres-connection-status');
+        async function testConnection(type, slaveId = null) {
+            const dbType = document.getElementById('db_type').value;
+            let statusElement;
+            let testConfig;
+            
+            if (type === 'source') {
+                statusElement = document.getElementById('source-connection-status');
+                testConfig = {
+                    type: dbType,
+                    host: document.getElementById('source_db_host').value,
+                    port: parseInt(document.getElementById('source_db_port').value),
+                    database: document.getElementById('source_db_database').value,
+                    username: document.getElementById('source_db_username').value,
+                    password: document.getElementById('source_db_password').value
+                };
+            } else if (type === 'slave' && slaveId) {
+                statusElement = document.getElementById(`slave_${slaveId}_connection_status`);
+                testConfig = {
+                    type: dbType,
+                    host: document.getElementById(`slave_host_${slaveId}`).value,
+                    port: parseInt(document.getElementById(`slave_port_${slaveId}`).value),
+                    database: document.getElementById(`slave_database_${slaveId}`).value,
+                    username: document.getElementById(`slave_username_${slaveId}`).value,
+                    password: document.getElementById(`slave_password_${slaveId}`).value
+                };
+            }
+            
             statusElement.innerHTML = '<span class="loading"></span>';
             
-            // Read current form values (not saved config)
+            // Validate that required fields are filled
+            if (!testConfig.host || !testConfig.database || !testConfig.username) {
+                statusElement.innerHTML = '<span class="connection-status connection-error">✗ Missing required fields</span>';
+                setTimeout(() => {
+                    statusElement.innerHTML = '';
+                }, 5000);
+                return;
+            }
+            
+            // Create config object - send ALL possible field names for maximum compatibility
+            // The backend will use whichever fields it needs
             const config = {
-                db_host: document.getElementById('db_host').value,
-                db_port: parseInt(document.getElementById('db_port').value),
-                db_database: document.getElementById('db_database').value,
-                db_username: document.getElementById('db_username').value,
-                db_password: document.getElementById('db_password').value,
-                psql_db_host: document.getElementById('psql_db_host').value,
-                psql_db_port: parseInt(document.getElementById('psql_db_port').value),
-                psql_db_database: document.getElementById('psql_db_database').value,
-                psql_db_username: document.getElementById('psql_db_username').value,
-                psql_db_password: document.getElementById('psql_db_password').value,
-                batch_size: parseInt(document.getElementById('batch_size').value) || 100,
-                poll_interval_secs: parseInt(document.getElementById('poll_interval_secs').value) || 10,
-                gemini_api_key: document.getElementById('gemini_api_key').value || null,
-                gemini_model: document.getElementById('gemini_model').value || 'gemini-2.0-flash-exp',
+                // For MySQL test (uses db_* fields)
+                db_host: testConfig.host,
+                db_port: testConfig.port,
+                db_database: testConfig.database,
+                db_username: testConfig.username,
+                db_password: testConfig.password,
+                
+                // For PostgreSQL test (uses psql_db_* fields)
+                psql_db_host: testConfig.host,
+                psql_db_port: testConfig.port,
+                psql_db_database: testConfig.database,
+                psql_db_username: testConfig.username,
+                psql_db_password: testConfig.password,
+                
+                // Additional fields for compatibility
+                batch_size: 100,
+                poll_interval_secs: 10,
+                sync_mode: "full-sync",
+                gemini_api_key: null,
+                gemini_model: "gemini-2.0-flash-exp"
             };
+            
+            // Debug: Log what we're sending
+            console.log('Testing connection:', {
+                connectionType: type,  // "source" or "slave"
+                databaseType: dbType,  // "mysql" or "postgresql"
+                config: {
+                    db_host: config.db_host,
+                    db_database: config.db_database,
+                    psql_db_host: config.psql_db_host,
+                    psql_db_database: config.psql_db_database
+                }
+            });
             
             try {
                 const response = await fetch('/api/test-connection', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type, config })
+                    body: JSON.stringify({ type: dbType, config })  // Send dbType (mysql/postgresql) not type (source/slave)
                 });
                 
                 const result = await response.json();
@@ -1054,15 +1469,17 @@
 
         async function startSync() {
             try {
-                // First, save the current sync mode to configuration
+                // First, save the current sync mode and reset_database flag to configuration
                 const syncMode = document.getElementById('sync-mode').value;
+                const resetDatabase = document.getElementById('reset-database').checked;
                 
-                // Get current config and update sync_mode
+                // Get current config and update sync_mode and reset_database
                 const configResponse = await fetch('/api/config');
                 if (configResponse.ok) {
                     const configResult = await configResponse.json();
                     if (configResult.success && configResult.data) {
                         configResult.data.sync_mode = syncMode;
+                        configResult.data.reset_database = resetDatabase;
                         
                         // Save updated config
                         await fetch('/api/config', {
@@ -1308,6 +1725,132 @@
             updateSyncModeDescription(); // Initialize sync mode description
             initChart();
             startAutoRefresh();
+            setupDatabaseTypeListeners(); // Setup listeners for database type changes
+        }
+        
+        // Setup listeners for database type dropdown changes
+        function setupDatabaseTypeListeners() {
+            const dbTypeSelect = document.getElementById('db_type');
+            const sourcePortInput = document.getElementById('source_db_port');
+            
+            // Update source port and all slave ports when database type changes
+            dbTypeSelect.addEventListener('change', function() {
+                const defaultPort = this.value === 'mysql' ? 3306 : 5432;
+                sourcePortInput.value = defaultPort;
+                
+                // Update all slave ports
+                const slavePorts = document.querySelectorAll('[id^="slave_port_"]');
+                slavePorts.forEach(port => {
+                    port.value = defaultPort;
+                });
+            });
+        }
+        
+        // Global counter for slave IDs
+        let slaveCounter = 0;
+        
+        // Add a new slave database configuration
+        function addSlaveDatabase() {
+            slaveCounter++;
+            const slaveId = slaveCounter;
+            const dbType = document.getElementById('db_type').value;
+            const defaultPort = dbType === 'mysql' ? 3306 : 5432;
+            
+            const slaveHtml = `
+                <div id="slave_${slaveId}" class="bg-surface-20 rounded-xl p-4 border border-surface-30 relative">
+                    <button onclick="removeSlaveDatabase(${slaveId})" class="absolute top-2 right-2 text-danger-0 hover:text-danger-10 transition-all">
+                        <span class="iconify" data-icon="solar:trash-bin-trash-bold" data-width="20"></span>
+                    </button>
+                    
+                    <h4 class="text-warning-10 font-semibold mb-3 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:database-bold" data-width="18"></span>
+                        Slave #${slaveId}
+                    </h4>
+                    
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-gray-300 text-xs mb-1">Host</label>
+                            <input type="text" id="slave_host_${slaveId}" placeholder="host.docker.internal" class="w-full px-3 py-2 border border-surface-30 rounded-lg focus:border-warning-10 focus:ring-2 focus:ring-warning-10/20 outline-none transition-all bg-surface-10 text-white text-sm">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-gray-300 text-xs mb-1">Port</label>
+                                <input type="number" id="slave_port_${slaveId}" value="${defaultPort}" class="w-full px-3 py-2 border border-surface-30 rounded-lg focus:border-warning-10 focus:ring-2 focus:ring-warning-10/20 outline-none transition-all bg-surface-10 text-white text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-gray-300 text-xs mb-1">Database</label>
+                                <input type="text" id="slave_database_${slaveId}" placeholder="db_name" class="w-full px-3 py-2 border border-surface-30 rounded-lg focus:border-warning-10 focus:ring-2 focus:ring-warning-10/20 outline-none transition-all bg-surface-10 text-white text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-gray-300 text-xs mb-1">Username</label>
+                            <input type="text" id="slave_username_${slaveId}" placeholder="root / postgres" class="w-full px-3 py-2 border border-surface-30 rounded-lg focus:border-warning-10 focus:ring-2 focus:ring-warning-10/20 outline-none transition-all bg-surface-10 text-white text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-gray-300 text-xs mb-1">Password</label>
+                            <input type="password" id="slave_password_${slaveId}" placeholder="password" class="w-full px-3 py-2 border border-surface-30 rounded-lg focus:border-warning-10 focus:ring-2 focus:ring-warning-10/20 outline-none transition-all bg-surface-10 text-white text-sm">
+                        </div>
+                        <button onclick="testConnection('slave', ${slaveId})" class="w-full px-4 py-2 bg-warning-0 hover:bg-warning-10 text-white text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2">
+                            <span class="iconify" data-icon="solar:test-tube-bold" data-width="16"></span>
+                            Test Connection
+                        </button>
+                        <span id="slave_${slaveId}_connection_status" class="text-xs"></span>
+                    </div>
+                </div>
+            `;
+            
+            const slavesContainer = document.getElementById('slaves-container');
+            slavesContainer.insertAdjacentHTML('beforeend', slaveHtml);
+            
+            updateSlavesVisibility();
+        }
+        
+        // Remove a slave database
+        function removeSlaveDatabase(slaveId) {
+            const slaveElement = document.getElementById(`slave_${slaveId}`);
+            if (slaveElement) {
+                slaveElement.remove();
+            }
+            updateSlavesVisibility();
+        }
+        
+        // Update visibility of no-slaves message
+        function updateSlavesVisibility() {
+            const slavesContainer = document.getElementById('slaves-container');
+            const noSlavesMessage = document.getElementById('no-slaves-message');
+            const hasSlaves = slavesContainer.children.length > 0;
+            
+            if (hasSlaves) {
+                noSlavesMessage.style.display = 'none';
+                slavesContainer.style.display = 'block';
+            } else {
+                noSlavesMessage.style.display = 'block';
+                slavesContainer.style.display = 'none';
+            }
+        }
+        
+        // Get all slave configurations
+        function getAllSlaves() {
+            const slaves = [];
+            const slavesContainer = document.getElementById('slaves-container');
+            const slaveElements = slavesContainer.querySelectorAll('[id^="slave_"]');
+            
+            slaveElements.forEach(slaveElement => {
+                const slaveId = slaveElement.id.replace('slave_', '');
+                const hostElement = document.getElementById(`slave_host_${slaveId}`);
+                
+                if (hostElement) {
+                    slaves.push({
+                        host: hostElement.value,
+                        port: parseInt(document.getElementById(`slave_port_${slaveId}`).value),
+                        database: document.getElementById(`slave_database_${slaveId}`).value,
+                        username: document.getElementById(`slave_username_${slaveId}`).value,
+                        password: document.getElementById(`slave_password_${slaveId}`).value
+                    });
+                }
+            });
+            
+            return slaves;
         }
 
         // Password match validation
@@ -1554,9 +2097,112 @@
             loadProfile();
         });
 
+        // Load and display sponsored ads
+        function createAdElement(ad) {
+            const adDiv = document.createElement('div');
+            adDiv.className = 'group bg-gradient-to-br from-surface-20 to-surface-10 rounded-xl overflow-hidden border border-primary-0/20 hover:border-primary-0/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary-0/20';
+            
+            adDiv.innerHTML = `
+                <a href="${ad.url || '#'}" target="_blank" rel="noopener noreferrer" class="block">
+                    ${ad.image ? `
+                        <div class="w-full h-32 overflow-hidden bg-surface-20">
+                            <img src="${ad.image}" alt="${ad.title || 'Tool'}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-0/20 to-primary-10/20\\'><span class=\\'iconify text-primary-0\\' data-icon=\\'solar:star-bold\\' data-width=\\'40\\'></span></div>';">
+                        </div>
+                    ` : `
+                        <div class="w-full h-32 bg-gradient-to-br from-primary-0/20 to-primary-10/20 flex items-center justify-center">
+                            <span class="iconify text-primary-0" data-icon="solar:star-bold" data-width="40"></span>
+                        </div>
+                    `}
+                    <div class="p-4">
+                        <div class="flex items-start gap-3 mb-2">
+                            ${ad.icon ? `
+                                <div class="flex-shrink-0 w-10 h-10 bg-surface-20 rounded-lg flex items-center justify-center overflow-hidden border border-primary-0/30">
+                                    <img src="${ad.icon}" alt="${ad.title || 'Tool'}" class="w-8 h-8 object-contain" onerror="this.style.display='none';">
+                                </div>
+                            ` : ''}
+                            <div class="flex-1 min-w-0">
+                                <h4 class="text-white font-bold text-sm mb-1 group-hover:text-primary-0 transition-colors flex items-center gap-2">
+                                    <span class="line-clamp-1">${ad.title || 'Sponsored Tool'}</span>
+                                    <span class="iconify opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" data-icon="solar:arrow-right-up-bold" data-width="12"></span>
+                                </h4>
+                                ${ad.category ? `
+                                    <span class="inline-block px-2 py-0.5 text-xs bg-primary-0/20 text-primary-0 rounded border border-primary-0/30">
+                                        ${ad.category}
+                                    </span>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <p class="text-gray-400 text-xs line-clamp-2">
+                            ${ad.description || 'Check out this amazing tool!'}
+                        </p>
+                    </div>
+                </a>
+            `;
+            
+            return adDiv;
+        }
+
+        function loadAds() {
+            const adsContainer = document.getElementById('ads-container');
+            
+            fetch('https://python-api.sys.coolrasto.com/ads/framer')
+                .then(response => response.json())
+                .then(ads => {
+                    if (ads && ads.length > 0) {
+                        // Display all ads in a vertical list
+                        adsContainer.innerHTML = '';
+                        adsContainer.className = 'p-4 space-y-4';
+                        
+                        // Add each ad
+                        ads.forEach(ad => {
+                            const adElement = createAdElement(ad);
+                            adsContainer.appendChild(adElement);
+                        });
+                        
+                        // Add a count badge at the bottom
+                        const countBadge = document.createElement('div');
+                        countBadge.className = 'text-center pt-2 pb-4 text-gray-500 text-xs';
+                        countBadge.textContent = `${ads.length} sponsored tool${ads.length !== 1 ? 's' : ''}`;
+                        adsContainer.appendChild(countBadge);
+                    } else {
+                        // No ads available
+                        adsContainer.innerHTML = `
+                            <div class="text-center text-gray-500 py-8">
+                                <p class="text-xs">No sponsored content</p>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.warn('Error loading ads:', error);
+                    adsContainer.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <p class="text-xs">Unable to load ads</p>
+                        </div>
+                    `;
+                });
+        }
+
+        // Load ads when the page loads
+        loadAds();
+        
+        // Refresh ads every 5 minutes
+        setInterval(loadAds, 5 * 60 * 1000);
+
         // Check authentication on page load
         checkAuth();
     </script>
+    
+    <!-- Buy Me a Coffee Floating Button -->
+    <a href="https://buymeacoffee.com/designega" 
+       target="_blank" 
+       rel="noopener noreferrer"
+       class="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-semibold px-6 py-3 rounded-full shadow-2xl hover:shadow-orange-500/50 transition-all duration-300 hover:scale-110 flex items-center gap-2 group"
+       title="Support the Developer">
+        <span class="iconify group-hover:animate-bounce" data-icon="solar:cup-hot-bold" data-width="24"></span>
+        <span class="hidden sm:inline">Buy Me a Coffee</span>
+        <span class="inline sm:hidden">☕</span>
+    </a>
 </body>
 </html>
 
