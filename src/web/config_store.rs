@@ -133,6 +133,8 @@ impl ConfigStore {
                 database TEXT NOT NULL,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
+                sync_status TEXT NOT NULL DEFAULT 'pending',
+                last_synced_at DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(host, port, database)
             )
@@ -140,6 +142,26 @@ impl ConfigStore {
         )
         .execute(&pool)
         .await?;
+        
+        // Migrate existing tables: Add sync_status column if it doesn't exist
+        sqlx::query(
+            r#"
+            ALTER TABLE slaves ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .ok(); // Ignore error if column already exists
+        
+        // Migrate existing tables: Add last_synced_at column if it doesn't exist
+        sqlx::query(
+            r#"
+            ALTER TABLE slaves ADD COLUMN last_synced_at DATETIME
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .ok(); // Ignore error if column already exists
 
         // Create operation_stats table for live sync statistics
         sqlx::query(
@@ -252,8 +274,8 @@ impl ConfigStore {
         for slave in &unique_slaves {
             sqlx::query(
                 r#"
-                INSERT INTO slaves (host, port, database, username, password)
-                VALUES (?1, ?2, ?3, ?4, ?5)
+                INSERT INTO slaves (host, port, database, username, password, sync_status, last_synced_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 "#,
             )
             .bind(&slave.host)
@@ -261,6 +283,8 @@ impl ConfigStore {
             .bind(&slave.database)
             .bind(&slave.username)
             .bind(&slave.password)
+            .bind(&slave.sync_status)
+            .bind(&slave.last_synced_at)
             .execute(&self.pool)
             .await?;
         }
@@ -297,7 +321,9 @@ impl ConfigStore {
                 // Load slaves from slaves table
                 let slaves_result = sqlx::query_as::<_, SlaveRow>(
                     r#"
-                    SELECT host, port, database, username, password
+                    SELECT host, port, database, username, password, 
+                           COALESCE(sync_status, 'pending') as sync_status, 
+                           last_synced_at
                     FROM slaves
                     ORDER BY id
                     "#,
@@ -311,6 +337,8 @@ impl ConfigStore {
                     database: s.database,
                     username: s.username,
                     password: s.password,
+                    sync_status: s.sync_status,
+                    last_synced_at: s.last_synced_at,
                 }).collect();
                 
                 info!("✅ Configuration loaded from database (with {} slave(s))", slaves.len());
@@ -364,6 +392,54 @@ impl ConfigStore {
 
         info!("✅ Configuration cleared from database");
         Ok(())
+    }
+    
+    /// Update sync status for a slave database
+    pub async fn update_slave_sync_status(&self, host: &str, port: u16, database: &str, status: &str, last_synced_at: Option<&str>) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE slaves 
+            SET sync_status = ?1, last_synced_at = ?2
+            WHERE host = ?3 AND port = ?4 AND database = ?5
+            "#,
+        )
+        .bind(status)
+        .bind(last_synced_at)
+        .bind(host)
+        .bind(port as i64)
+        .bind(database)
+        .execute(&self.pool)
+        .await?;
+        
+        Ok(())
+    }
+    
+    /// Get list of pending (unsynced) slaves
+    pub async fn get_pending_slaves(&self) -> Result<Vec<super::state::SlaveConfig>> {
+        let slaves_result = sqlx::query_as::<_, SlaveRow>(
+            r#"
+            SELECT host, port, database, username, password, 
+                   COALESCE(sync_status, 'pending') as sync_status, 
+                   last_synced_at
+            FROM slaves
+            WHERE sync_status = 'pending'
+            ORDER BY id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        
+        let slaves: Vec<super::state::SlaveConfig> = slaves_result.into_iter().map(|s| super::state::SlaveConfig {
+            host: s.host,
+            port: s.port as u16,
+            database: s.database,
+            username: s.username,
+            password: s.password,
+            sync_status: s.sync_status,
+            last_synced_at: s.last_synced_at,
+        }).collect();
+        
+        Ok(slaves)
     }
 
     /// Check if any users exist
@@ -646,6 +722,8 @@ struct SlaveRow {
     database: String,
     username: String,
     password: String,
+    sync_status: String,
+    last_synced_at: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]

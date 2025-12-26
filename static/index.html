@@ -1233,25 +1233,70 @@
                 slavesOverviewList.classList.remove('hidden');
                 slavesNotConfigured.classList.add('hidden');
                 
-                slavesOverviewList.innerHTML = slaves.map((slave, index) => `
-                    <div class="bg-surface-10 border border-warning-0/40 rounded-lg p-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-warning-20 font-semibold flex items-center gap-2">
-                                <span class="iconify" data-icon="solar:database-bold" data-width="18"></span>
-                                Slave #${index + 1}
-                            </h4>
-                            <div class="flex items-center gap-2">
-                                <span class="inline-block w-2 h-2 rounded-full bg-warning-0 shadow-lg animate-pulse"></span>
-                                <span class="text-xs font-semibold text-warning-20">Configured</span>
+                slavesOverviewList.innerHTML = slaves.map((slave, index) => {
+                    const status = slave.sync_status || 'pending';
+                    const lastSynced = slave.last_synced_at;
+                    
+                    // Status configurations
+                    const statusConfig = {
+                        'pending': {
+                            color: 'gray',
+                            bgColor: 'bg-gray-500',
+                            textColor: 'text-gray-300',
+                            icon: 'solar:clock-circle-bold',
+                            text: 'Pending',
+                            pulse: false
+                        },
+                        'syncing': {
+                            color: 'blue',
+                            bgColor: 'bg-primary-0',
+                            textColor: 'text-primary-10',
+                            icon: 'solar:refresh-bold',
+                            text: 'Syncing...',
+                            pulse: true
+                        },
+                        'synced': {
+                            color: 'green',
+                            bgColor: 'bg-green-500',
+                            textColor: 'text-green-400',
+                            icon: 'solar:check-circle-bold',
+                            text: 'Synced',
+                            pulse: false
+                        },
+                        'failed': {
+                            color: 'red',
+                            bgColor: 'bg-red-500',
+                            textColor: 'text-red-400',
+                            icon: 'solar:close-circle-bold',
+                            text: 'Failed',
+                            pulse: false
+                        }
+                    };
+                    
+                    const config = statusConfig[status] || statusConfig['pending'];
+                    const lastSyncedText = lastSynced ? new Date(lastSynced).toLocaleString() : 'Never';
+                    
+                    return `
+                        <div class="bg-surface-10 border border-warning-0/40 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-warning-20 font-semibold flex items-center gap-2">
+                                    <span class="iconify" data-icon="solar:database-bold" data-width="18"></span>
+                                    Slave #${index + 1}
+                                </h4>
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-block w-2 h-2 rounded-full ${config.bgColor} shadow-lg ${config.pulse ? 'animate-pulse' : ''}"></span>
+                                    <span class="text-xs font-semibold ${config.textColor}">${config.text}</span>
+                                </div>
+                            </div>
+                            <div class="space-y-1 text-sm text-gray-300">
+                                <div><span class="text-gray-400">Host:</span> <span class="font-mono ml-1">${slave.host}:${slave.port}</span></div>
+                                <div><span class="text-gray-400">Database:</span> <span class="font-mono ml-1">${slave.database}</span></div>
+                                <div><span class="text-gray-400">Username:</span> <span class="font-mono ml-1">${slave.username}</span></div>
+                                ${status === 'synced' ? `<div class="pt-2 border-t border-surface-30 mt-2"><span class="text-gray-400 text-xs">Last synced:</span> <span class="font-mono ml-1 text-xs text-green-400">${lastSyncedText}</span></div>` : ''}
                             </div>
                         </div>
-                        <div class="space-y-1 text-sm text-gray-300">
-                            <div><span class="text-gray-400">Host:</span> <span class="font-mono ml-1">${slave.host}:${slave.port}</span></div>
-                            <div><span class="text-gray-400">Database:</span> <span class="font-mono ml-1">${slave.database}</span></div>
-                            <div><span class="text-gray-400">Username:</span> <span class="font-mono ml-1">${slave.username}</span></div>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
                 slavesOverviewList.classList.add('hidden');
                 slavesNotConfigured.classList.remove('hidden');
@@ -2102,11 +2147,15 @@
             const adDiv = document.createElement('div');
             adDiv.className = 'group bg-gradient-to-br from-surface-20 to-surface-10 rounded-xl overflow-hidden border border-primary-0/20 hover:border-primary-0/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary-0/20';
             
+            // Use the correct field names from the API
+            const bannerImage = ad.image_url || null;
+            const iconImage = ad.icon || ad.logo || ad.icon_url || null;
+            
             adDiv.innerHTML = `
                 <a href="${ad.url || '#'}" target="_blank" rel="noopener noreferrer" class="block">
-                    ${ad.image ? `
+                    ${bannerImage ? `
                         <div class="w-full h-32 overflow-hidden bg-surface-20">
-                            <img src="${ad.image}" alt="${ad.title || 'Tool'}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-0/20 to-primary-10/20\\'><span class=\\'iconify text-primary-0\\' data-icon=\\'solar:star-bold\\' data-width=\\'40\\'></span></div>';">
+                            <img src="${bannerImage}" alt="${ad.title || 'Tool'}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center bg-gradient-to-br from-primary-0/20 to-primary-10/20\\'><span class=\\'iconify text-primary-0\\' data-icon=\\'solar:star-bold\\' data-width=\\'40\\'></span></div>';">
                         </div>
                     ` : `
                         <div class="w-full h-32 bg-gradient-to-br from-primary-0/20 to-primary-10/20 flex items-center justify-center">
@@ -2115,14 +2164,14 @@
                     `}
                     <div class="p-4">
                         <div class="flex items-start gap-3 mb-2">
-                            ${ad.icon ? `
+                            ${iconImage ? `
                                 <div class="flex-shrink-0 w-10 h-10 bg-surface-20 rounded-lg flex items-center justify-center overflow-hidden border border-primary-0/30">
-                                    <img src="${ad.icon}" alt="${ad.title || 'Tool'}" class="w-8 h-8 object-contain" onerror="this.style.display='none';">
+                                    <img src="${iconImage}" alt="${ad.title || 'Tool'}" class="w-8 h-8 object-contain" onerror="this.style.display='none';">
                                 </div>
                             ` : ''}
                             <div class="flex-1 min-w-0">
                                 <h4 class="text-white font-bold text-sm mb-1 group-hover:text-primary-0 transition-colors flex items-center gap-2">
-                                    <span class="line-clamp-1">${ad.title || 'Sponsored Tool'}</span>
+                                    <span class="line-clamp-1">${ad.title || ad.name || 'Sponsored Tool'}</span>
                                     <span class="iconify opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" data-icon="solar:arrow-right-up-bold" data-width="12"></span>
                                 </h4>
                                 ${ad.category ? `
@@ -2133,7 +2182,7 @@
                             </div>
                         </div>
                         <p class="text-gray-400 text-xs line-clamp-2">
-                            ${ad.description || 'Check out this amazing tool!'}
+                            ${ad.description || ad.desc || 'Check out this amazing tool!'}
                         </p>
                     </div>
                 </a>

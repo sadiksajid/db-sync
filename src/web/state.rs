@@ -10,6 +10,14 @@ pub struct SlaveConfig {
     pub database: String,
     pub username: String,
     pub password: String,
+    #[serde(default = "default_sync_status")]
+    pub sync_status: String,  // "pending", "syncing", "synced", "failed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<String>,
+}
+
+fn default_sync_status() -> String {
+    "pending".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

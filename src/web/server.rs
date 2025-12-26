@@ -139,6 +139,24 @@ async fn update_config(
         ));
     }
 
+    // Get old config to detect new slaves
+    let old_config = state.config.read().await.clone();
+    
+    // Create a set of existing slaves (host:port:database)
+    use std::collections::HashSet;
+    let existing_slaves: HashSet<String> = old_config.slaves.iter()
+        .map(|s| format!("{}:{}:{}", s.host, s.port, s.database))
+        .collect();
+    
+    // Find new slaves
+    let new_slaves: Vec<_> = new_config.slaves.iter()
+        .filter(|s| {
+            let key = format!("{}:{}:{}", s.host, s.port, s.database);
+            !existing_slaves.contains(&key)
+        })
+        .cloned()
+        .collect();
+
     // Save to database for persistence
     if let Err(e) = state.config_store.save_config(&new_config).await {
         error!("Failed to save config to database: {}", e);
@@ -148,8 +166,160 @@ async fn update_config(
         )));
     }
 
-    *state.config.write().await = new_config;
+    *state.config.write().await = new_config.clone();
     state.add_log("✅ Configuration saved (persisted to database)".to_string()).await;
+    
+    // Auto-sync only NEW slaves if any
+    if !new_slaves.is_empty() {
+        state.add_log(format!("🆕 Detected {} new slave database(s), starting auto-sync...", new_slaves.len())).await;
+        
+        // Prepare configs for new slaves only
+        let sync_mode = new_config.sync_mode.clone();
+        let source_host = new_config.source_db_host.clone();
+        let source_port = new_config.source_db_port;
+        let source_db = new_config.source_db_database.clone();
+        let source_username = new_config.source_db_username.clone();
+        let source_password = new_config.source_db_password.clone();
+        let db_type = new_config.db_type.clone();
+        
+        // Spawn background task to sync new slaves
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            use chrono::Utc;
+            
+            let mut handles = vec![];
+            
+            for (idx, slave) in new_slaves.into_iter().enumerate() {
+                let slave_num = idx + 1;
+                let state_clone2 = state_clone.clone();
+                let sync_mode_clone = sync_mode.clone();
+                
+                // Create config for this slave
+                use crate::config::{Config, DatabaseType, SyncMode};
+                
+                let db_type_enum = DatabaseType::from_str(&db_type)
+                    .unwrap_or(DatabaseType::MySQL);
+                
+                let source_url = match db_type_enum {
+                    DatabaseType::MySQL => format!(
+                        "mysql://{}:{}@{}:{}/{}",
+                        source_username,
+                        source_password,
+                        source_host,
+                        source_port,
+                        source_db
+                    ),
+                    DatabaseType::PostgreSQL => format!(
+                        "postgresql://{}:{}@{}:{}/{}",
+                        source_username,
+                        source_password,
+                        source_host,
+                        source_port,
+                        source_db
+                    ),
+                };
+                
+                let target_url = match db_type_enum {
+                    DatabaseType::MySQL => format!(
+                        "mysql://{}:{}@{}:{}/{}",
+                        slave.username,
+                        slave.password,
+                        slave.host,
+                        slave.port,
+                        slave.database
+                    ),
+                    DatabaseType::PostgreSQL => format!(
+                        "postgresql://{}:{}@{}:{}/{}",
+                        slave.username,
+                        slave.password,
+                        slave.host,
+                        slave.port,
+                        slave.database
+                    ),
+                };
+                
+                let sync_mode_enum = SyncMode::from_str(&sync_mode_clone)
+                    .unwrap_or(SyncMode::Both);
+                
+                let slave_config = Config {
+                    source_url,
+                    target_url,
+                    source_type: db_type_enum.clone(),
+                    target_type: db_type_enum,
+                    sync_mode: sync_mode_enum,
+                    batch_size: 1000,
+                    source_database: source_db.clone(),
+                    target_database: slave.database.clone(),
+                    source_host: source_host.clone(),
+                    source_port,
+                    source_username: source_username.clone(),
+                    source_password: source_password.clone(),
+                    target_host: slave.host.clone(),
+                    target_port: slave.port,
+                    target_username: slave.username.clone(),
+                    target_password: slave.password.clone(),
+                };
+                
+                let slave_host = slave.host.clone();
+                let slave_port = slave.port;
+                let slave_db = slave.database.clone();
+                
+                let handle = tokio::spawn(async move {
+                    state_clone2.add_log(format!("🔵 [New Slave #{}] Starting auto-sync to '{}'...", slave_num, slave_db)).await;
+                    
+                    // Update status to "syncing"
+                    if let Err(e) = state_clone2.config_store.update_slave_sync_status(
+                        &slave_host, slave_port, &slave_db, "syncing", None
+                    ).await {
+                        state_clone2.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+                    }
+                    
+                    let result = match sync_mode_clone.as_str() {
+                        "initial-sync" => {
+                            crate::run_initial_only_for_ui(slave_config, state_clone2.clone()).await
+                        }
+                        "realtime-sync" => {
+                            crate::run_realtime_only_for_ui(slave_config, state_clone2.clone()).await
+                        }
+                        _ => {
+                            crate::run_full_sync_for_ui(slave_config, state_clone2.clone()).await
+                        }
+                    };
+                    
+                    match result {
+                        Ok(_) => {
+                            let now = Utc::now().to_rfc3339();
+                            state_clone2.add_log(format!("✅ [New Slave #{}] Auto-sync completed for '{}'", slave_num, slave_db)).await;
+                            
+                            if let Err(e) = state_clone2.config_store.update_slave_sync_status(
+                                &slave_host, slave_port, &slave_db, "synced", Some(&now)
+                            ).await {
+                                state_clone2.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+                            }
+                            Ok(())
+                        }
+                        Err(e) => {
+                            state_clone2.add_log(format!("❌ [New Slave #{}] Auto-sync failed for '{}': {}", slave_num, slave_db, e)).await;
+                            
+                            if let Err(e) = state_clone2.config_store.update_slave_sync_status(
+                                &slave_host, slave_port, &slave_db, "failed", None
+                            ).await {
+                                state_clone2.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+                            }
+                            Err(e)
+                        }
+                    }
+                });
+                
+                handles.push(handle);
+            }
+            
+            // Wait for all new slaves to complete
+            for handle in handles {
+                let _ = handle.await;
+            }
+        });
+    }
     
     Json(ApiResponse::success("Configuration saved successfully", None))
 }
@@ -413,11 +583,20 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
         let slave_num = idx + 1;
         let state_clone = state.clone();
         let sync_mode_clone = sync_mode.clone();
+        let slave_host = slave_config.target_host.clone();
+        let slave_port = slave_config.target_port;
         let slave_db = slave_config.target_database.clone();
         
         // Spawn a separate task for each slave
         let handle = tokio::spawn(async move {
             state_clone.add_log(format!("🔵 [Slave #{}] Starting sync to '{}'...", slave_num, slave_db)).await;
+            
+            // Update status to "syncing"
+            if let Err(e) = state_clone.config_store.update_slave_sync_status(
+                &slave_host, slave_port, &slave_db, "syncing", None
+            ).await {
+                state_clone.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+            }
             
             let result = match sync_mode_clone.as_str() {
                 "initial-sync" => {
@@ -433,11 +612,28 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
             
             match result {
                 Ok(_) => {
+                    let now = Utc::now().to_rfc3339();
                     state_clone.add_log(format!("✅ [Slave #{}] Sync completed successfully for '{}'", slave_num, slave_db)).await;
-                    Ok(())
+                    
+                    // Update status to "synced"
+                    if let Err(e) = state_clone.config_store.update_slave_sync_status(
+                        &slave_host, slave_port, &slave_db, "synced", Some(&now)
+                    ).await {
+                        state_clone.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+                    }
+                    
+                    Ok((slave_host, slave_port, slave_db))
                 }
                 Err(e) => {
                     state_clone.add_log(format!("❌ [Slave #{}] Sync failed for '{}': {}", slave_num, slave_db, e)).await;
+                    
+                    // Update status to "failed"
+                    if let Err(e) = state_clone.config_store.update_slave_sync_status(
+                        &slave_host, slave_port, &slave_db, "failed", None
+                    ).await {
+                        state_clone.add_log(format!("⚠️  Failed to update slave status: {}", e)).await;
+                    }
+                    
                     Err(e)
                 }
             }
