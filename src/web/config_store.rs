@@ -248,6 +248,26 @@ impl ConfigStore {
         .await?;
 
         // Save slaves to slaves table
+        // Load existing slaves to preserve their sync status
+        let existing_slaves = sqlx::query_as::<_, SlaveRow>(
+            r#"
+            SELECT host, port, database, username, password, 
+                   COALESCE(sync_status, 'pending') as sync_status, 
+                   last_synced_at
+            FROM slaves
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        
+        // Create a map of existing slave statuses
+        use std::collections::HashMap;
+        let mut status_map: HashMap<String, (String, Option<String>)> = HashMap::new();
+        for existing in existing_slaves {
+            let key = format!("{}:{}:{}", existing.host, existing.port, existing.database);
+            status_map.insert(key, (existing.sync_status, existing.last_synced_at));
+        }
+        
         // First, clear existing slaves
         sqlx::query("DELETE FROM slaves")
             .execute(&self.pool)
@@ -268,10 +288,25 @@ impl ConfigStore {
             }
         }
         
-        // Then insert unique slaves only
+        // Then insert unique slaves only, preserving existing sync status
         let saved_count = unique_slaves.len();
         
         for slave in &unique_slaves {
+            let key = format!("{}:{}:{}", slave.host, slave.port, slave.database);
+            
+            // Use existing status if available, otherwise use the one from config (or default to pending)
+            let (sync_status, last_synced_at) = status_map.get(&key)
+                .map(|(s, l)| {
+                    info!("📋 Preserving sync status for {}:{}/{}: {}", 
+                        slave.host, slave.port, slave.database, s);
+                    (s.clone(), l.clone())
+                })
+                .unwrap_or_else(|| {
+                    info!("🆕 New slave detected: {}:{}/{} (status: pending)", 
+                        slave.host, slave.port, slave.database);
+                    (slave.sync_status.clone(), slave.last_synced_at.clone())
+                });
+            
             sqlx::query(
                 r#"
                 INSERT INTO slaves (host, port, database, username, password, sync_status, last_synced_at)
@@ -283,8 +318,8 @@ impl ConfigStore {
             .bind(&slave.database)
             .bind(&slave.username)
             .bind(&slave.password)
-            .bind(&slave.sync_status)
-            .bind(&slave.last_synced_at)
+            .bind(&sync_status)
+            .bind(&last_synced_at)
             .execute(&self.pool)
             .await?;
         }
@@ -396,7 +431,7 @@ impl ConfigStore {
     
     /// Update sync status for a slave database
     pub async fn update_slave_sync_status(&self, host: &str, port: u16, database: &str, status: &str, last_synced_at: Option<&str>) -> Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE slaves 
             SET sync_status = ?1, last_synced_at = ?2
@@ -410,6 +445,11 @@ impl ConfigStore {
         .bind(database)
         .execute(&self.pool)
         .await?;
+        
+        if result.rows_affected() > 0 {
+            info!("💾 Saved sync status to SQLite: {}:{}/{} → {}", 
+                host, port, database, status);
+        }
         
         Ok(())
     }
