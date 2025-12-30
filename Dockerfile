@@ -34,6 +34,7 @@ RUN apt-get update && \
     libssl3 \
     libsqlite3-0 \
     default-mysql-client \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

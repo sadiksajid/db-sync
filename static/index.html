@@ -121,60 +121,66 @@
 <body class="bg-surface-0 min-h-screen">
     <div class="flex">
         <!-- Main Content Area -->
-        <div class="flex-1 mr-80">
+        <div class="flex-1 mr-0 lg:mr-80 transition-all duration-300">
         <!-- Header -->
-        <header class="bg-surface-10 backdrop-blur-lg px-12 py-8 border-b border-primary-0/20 shadow-2xl">
-            <div class="flex items-center justify-between">
+        <header class="bg-surface-10 backdrop-blur-lg px-4 md:px-8 lg:px-12 py-6 md:py-8 border-b border-primary-0/20 shadow-2xl">
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-primary-0 text-4xl font-bold mb-2 tracking-tight flex items-center gap-3">
-                        <span class="iconify" data-icon="solar:transfer-horizontal-bold" data-width="40"></span>
-                        Database Sync Proxy
+                    <h1 class="text-primary-0 text-2xl md:text-3xl lg:text-4xl font-bold mb-2 tracking-tight flex items-center gap-2 md:gap-3">
+                        <span class="iconify" data-icon="solar:transfer-horizontal-bold" data-width="32" data-inline="false"></span>
+                        <span>Database Sync Proxy</span>
                     </h1>
-                    <p class="text-primary-20 text-lg opacity-90">Same-Type Database Synchronization (MySQL→MySQL or PostgreSQL→PostgreSQL)</p>
+                    <p class="text-primary-20 text-sm md:text-base lg:text-lg opacity-90">Same-Type Database Synchronization (MySQL→MySQL or PostgreSQL→PostgreSQL)</p>
                 </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="showSection('profile'); loadProfile();" class="px-6 py-3 bg-info-0 hover:bg-info-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:user-bold" data-width="20"></span>
-                        Profile
+                <div class="flex items-center gap-2 md:gap-3 w-full md:w-auto">
+                    <button onclick="showSection('profile'); loadProfile();" class="flex-1 md:flex-none px-4 md:px-6 py-2 md:py-3 bg-info-0 hover:bg-info-10 text-white text-sm md:text-base font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center justify-center gap-2">
+                        <span class="iconify" data-icon="solar:user-bold" data-width="18"></span>
+                        <span class="hidden sm:inline">Profile</span>
                     </button>
-                    <button onclick="logout()" class="px-6 py-3 bg-surface-20 hover:bg-surface-30 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:logout-2-bold" data-width="20"></span>
-                        Logout
+                    <button onclick="logout()" class="flex-1 md:flex-none px-4 md:px-6 py-2 md:py-3 bg-surface-20 hover:bg-surface-30 text-white text-sm md:text-base font-semibold rounded-xl shadow-lg hover:-translate-y-1 transition-all duration-300 flex items-center justify-center gap-2">
+                        <span class="iconify" data-icon="solar:logout-2-bold" data-width="18"></span>
+                        <span class="hidden sm:inline">Logout</span>
                     </button>
                 </div>
             </div>
         </header>
 
         <!-- Navigation -->
-        <nav class="bg-surface-10 backdrop-blur-lg border-b border-primary-0/20 shadow-lg sticky top-0 z-50">
-            <ul class="flex justify-center">
+        <nav class="bg-surface-10 backdrop-blur-lg border-b border-primary-0/20 shadow-lg sticky top-0 z-50 overflow-x-auto scrollbar-custom">
+            <ul class="flex justify-center md:justify-center min-w-max md:min-w-0">
                 <li>
-                    <button type="button" onclick="showSection('home')" id="nav-home" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:home-2-bold" data-width="24"></span>
+                    <button type="button" onclick="showSection('home')" id="nav-home" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:home-2-bold" data-width="20"></span>
                         <span>Home</span>
                     </button>
                 </li>
                 <li>
-                    <button type="button" onclick="showSection('settings')" id="nav-settings" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:settings-bold" data-width="24"></span>
+                    <button type="button" onclick="showSection('settings')" id="nav-settings" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:settings-bold" data-width="20"></span>
                         <span>Settings</span>
                     </button>
                 </li>
                 <li>
-                    <button type="button" onclick="showSection('statistics')" id="nav-statistics" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:chart-2-bold" data-width="24"></span>
+                    <button type="button" onclick="showSection('schedules')" id="nav-schedules" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:calendar-bold" data-width="20"></span>
+                        <span>Schedules</span>
+                    </button>
+                </li>
+                <li>
+                    <button type="button" onclick="showSection('statistics')" id="nav-statistics" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:chart-2-bold" data-width="20"></span>
                         <span>Statistics</span>
                     </button>
                 </li>
                 <li>
-                    <button type="button" onclick="showSection('chart')" id="nav-chart" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:chart-bold" data-width="24"></span>
+                    <button type="button" onclick="showSection('chart')" id="nav-chart" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:chart-bold" data-width="20"></span>
                         <span>Chart</span>
                     </button>
                 </li>
                 <li>
-                    <button type="button" onclick="showSection('profile')" id="nav-profile" class="nav-btn px-10 py-5 border-b-4 border-transparent text-gray-300 font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
-                        <span class="iconify" data-icon="solar:user-bold" data-width="24"></span>
+                    <button type="button" onclick="showSection('profile')" id="nav-profile" class="nav-btn px-4 md:px-8 lg:px-10 py-3 md:py-4 lg:py-5 border-b-4 border-transparent text-gray-300 text-sm md:text-base font-semibold transition-all duration-300 hover:bg-primary-0/10 hover:text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:user-bold" data-width="20"></span>
                         <span>Profile</span>
                     </button>
                 </li>
@@ -185,7 +191,8 @@
         <div id="alert-container" class="px-8 pt-4"></div>
 
         <!-- HOME SECTION -->
-        <div id="section-home" class="section hidden p-8 animate-fade-in">
+        <div id="section-home" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-7xl mx-auto px-2 md:px-0">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Status Card -->
                 <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20 hover:shadow-primary-0/20 hover:-translate-y-1 transition-all duration-300">
@@ -206,9 +213,9 @@
                             Sync Mode
                         </label>
                         <select id="sync-mode" onchange="updateSyncModeDescription()" class="w-full px-4 py-3 bg-surface-20 text-white border border-primary-0/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-0 focus:border-transparent transition-all">
-                            <option value="full-sync">Full Sync (Initial + Real-time)</option>
+                            <option value="full-sync" id="option-full-sync">Full Sync (Initial + Real-time)</option>
                             <option value="initial-sync">Initial Sync Only (Schema + Data)</option>
-                            <option value="realtime-sync">Real-time Sync Only (Binlog)</option>
+                            <option value="realtime-sync" id="option-realtime-sync">Real-time Sync Only (Binlog)</option>
                         </select>
                         <div id="sync-mode-description" class="mt-3 p-3 bg-surface-20 rounded-lg border border-primary-0/20">
                             <p class="text-xs text-gray-300">
@@ -366,11 +373,36 @@
                 </div>
             </div>
             
+            <!-- Active Schedules Section -->
+            <div class="mt-6">
+                <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
+                    <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:calendar-bold" data-width="28"></span>
+                        Active Schedules
+                        <span id="active-schedules-count-badge" class="ml-auto text-sm px-3 py-1 bg-primary-0 text-white rounded-full">0</span>
+                    </h2>
+                    
+                    <div id="active-schedules-list" class="space-y-4">
+                        <!-- Active schedules will be listed here -->
+                    </div>
+                    
+                    <div id="no-active-schedules" class="text-center py-8 text-gray-400 border-2 border-dashed border-surface-30 rounded-xl">
+                        <span class="iconify" data-icon="solar:calendar-bold" data-width="64" class="opacity-30 mb-3"></span>
+                        <p class="text-lg font-semibold mb-2">No active schedules</p>
+                        <p class="text-sm mb-4">Create schedules to automatically sync databases at specific times</p>
+                        <button onclick="showSection('schedules')" class="px-6 py-3 bg-primary-0 hover:bg-primary-10 text-white font-semibold rounded-xl transition-all">
+                            Create Schedule
+                        </button>
+                    </div>
+                </div>
+            </div>
+            </div>
+            
         </div>
         </div>
         
         <!-- Right Sidebar for Ads -->
-        <aside class="w-80 bg-surface-10 border-l border-primary-0/20 fixed right-0 top-0 h-screen overflow-y-auto scrollbar-custom">
+        <aside class="hidden lg:block w-80 bg-surface-10 border-l border-primary-0/20 fixed right-0 top-0 h-screen overflow-y-auto scrollbar-custom">
             <div class="p-4 sticky top-0 bg-surface-10 z-10 border-b border-primary-0/20">
                 <h3 class="text-lg text-primary-0 font-bold flex items-center gap-2">
                     <span class="iconify" data-icon="solar:star-bold" data-width="20"></span>
@@ -389,7 +421,8 @@
     </div>
 
         <!-- SETTINGS SECTION -->
-        <div id="section-settings" class="section hidden p-8 animate-fade-in">
+        <div id="section-settings" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-5xl mx-auto px-2 md:px-0">
             <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
                 <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
                     <span class="iconify" data-icon="solar:database-bold" data-width="28"></span>
@@ -402,11 +435,15 @@
                         <span class="iconify" data-icon="solar:server-bold" data-width="24"></span>
                         Database Type
                     </label>
-                    <select id="db_type" class="w-full px-5 py-4 border-2 border-primary-0/40 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white text-lg font-semibold focus:bg-surface-20">
+                    <select id="db_type" onchange="handleDatabaseTypeChange()" class="w-full px-5 py-4 border-2 border-primary-0/40 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white text-lg font-semibold focus:bg-surface-20">
                         <option value="mysql">MySQL</option>
                         <option value="postgresql">PostgreSQL</option>
                     </select>
                     <p class="mt-2 text-gray-400 text-sm">All databases (source and slaves) must be of the same type</p>
+                    <p id="postgresql-realtime-warning" class="mt-2 text-warning-0 text-sm hidden">
+                        <span class="iconify inline-block" data-icon="solar:danger-circle-bold" data-width="16"></span>
+                        <strong>Note:</strong> Real-time sync is not available for PostgreSQL. Only "Initial Sync" mode is supported.
+                    </p>
                 </div>
                 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -488,14 +525,6 @@
                             <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Poll Interval (seconds)</label>
                             <input type="number" id="poll_interval_secs" placeholder="10" value="10" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
                         </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Gemini API Key (optional)</label>
-                            <input type="password" id="gemini_api_key" placeholder="Leave empty to skip AI conversion" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
-                        <div>
-                            <label class="block text-gray-300 font-semibold mb-2 text-sm tracking-wide">Gemini Model</label>
-                            <input type="text" id="gemini_model" placeholder="gemini-2.0-flash-exp" value="gemini-2.0-flash-exp" class="w-full px-4 py-3 border-2 border-surface-30 rounded-xl focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all bg-surface-10 text-white focus:bg-surface-20">
-                        </div>
                         <button onclick="saveConfig()" class="w-full md:col-span-2 px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300 flex items-center justify-center gap-2">
                             <span class="iconify" data-icon="solar:diskette-bold" data-width="20"></span>
                             Save Configuration
@@ -503,10 +532,12 @@
                     </div>
                 </div>
             </div>
+            </div>
         </div>
 
         <!-- STATISTICS SECTION -->
-        <div id="section-statistics" class="section hidden p-8 animate-fade-in">
+        <div id="section-statistics" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-6xl mx-auto px-2 md:px-0">
             <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
                 <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
                     <span class="iconify" data-icon="solar:chart-2-bold" data-width="28"></span>
@@ -582,10 +613,12 @@
                     </button>
                 </div>
             </div>
+            </div>
         </div>
 
         <!-- CHART SECTION -->
-        <div id="section-chart" class="section hidden p-8 animate-fade-in">
+        <div id="section-chart" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-6xl mx-auto px-2 md:px-0">
             <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
                 <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
                     <span class="iconify" data-icon="solar:chart-bold" data-width="28"></span>
@@ -614,10 +647,93 @@
                     </ul>
                 </div>
             </div>
+            </div>
         </div>
 
         <!-- PROFILE SECTION -->
-        <div id="section-profile" class="section hidden p-8 animate-fade-in">
+
+        <!-- SCHEDULES SECTION -->
+        <div id="section-schedules" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-5xl mx-auto px-2 md:px-0">
+            <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
+                <div class="flex justify-between items-center mb-6 pb-3 border-b-2 border-primary-0">
+                    <h2 class="text-2xl text-primary-0 font-bold flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:calendar-bold" data-width="28"></span>
+                        Scheduled Syncs
+                    </h2>
+                    <button onclick="openScheduleModal()" class="px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:add-circle-bold" data-width="20"></span>
+                        Add Schedule
+                    </button>
+                </div>
+
+                <!-- Schedules List -->
+                <div id="schedules-list" class="space-y-4">
+                    <!-- Schedules will be loaded here -->
+                </div>
+
+                <!-- Empty State -->
+                <div id="schedules-empty" class="hidden text-center py-16">
+                    <div class="inline-flex items-center justify-center w-20 h-20 bg-surface-20 rounded-full mb-4">
+                        <span class="iconify text-gray-400" data-icon="solar:calendar-bold" data-width="40"></span>
+                    </div>
+                    <h3 class="text-xl text-gray-300 font-semibold mb-2">No Schedules Yet</h3>
+                    <p class="text-gray-400">Create your first schedule to automatically sync databases at specific times.</p>
+                    <button onclick="openScheduleModal()" class="mt-6 px-8 py-3 bg-primary-0 hover:bg-primary-10 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 flex items-center gap-2 mx-auto">
+                        <span class="iconify" data-icon="solar:add-circle-bold" data-width="20"></span>
+                        Create Schedule
+                    </button>
+                </div>
+
+                <!-- Schedule Info -->
+                <div class="mt-8 p-6 bg-surface-20 rounded-xl border border-primary-0/10">
+                    <strong class="text-primary-0 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:info-circle-bold" data-width="20"></span>
+                        About Scheduled Syncs
+                    </strong>
+                    <ul class="mt-4 ml-6 space-y-3 text-gray-300 list-disc">
+                        <li>Schedules automatically run <strong class="text-primary-20">"Initial Sync Only"</strong> mode (Schema + Data)</li>
+                        <li>All configured slave databases will be synced simultaneously</li>
+                        <li class="font-semibold text-primary-20">Two easy scheduling options:</li>
+                    </ul>
+                    
+                    <div class="mt-4 ml-10 space-y-3">
+                        <div class="flex items-start gap-3">
+                            <span class="iconify text-primary-0 mt-1" data-icon="solar:clock-circle-bold" data-width="20"></span>
+                            <div>
+                                <strong class="text-white">Time Delay:</strong>
+                                <p class="text-gray-400 text-sm mt-1">Run every X hours or days</p>
+                                <p class="text-gray-500 text-xs mt-1">
+                                    Examples: Every 12 hours • Every 2 days • Every 6 hours
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-3">
+                            <span class="iconify text-primary-0 mt-1" data-icon="solar:calendar-mark-bold" data-width="20"></span>
+                            <div>
+                                <strong class="text-white">Exact Time:</strong>
+                                <p class="text-gray-400 text-sm mt-1">Run at a specific time with frequency options</p>
+                                <p class="text-gray-500 text-xs mt-1">
+                                    Examples: Daily at 15:30 • Weekdays at 09:00 • Every Monday at 08:00
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 p-3 bg-info-0/10 border border-info-0/30 rounded-lg">
+                        <p class="text-info-20 text-sm flex items-center gap-2">
+                            <span class="iconify" data-icon="solar:lightbulb-bolt-bold" data-width="16"></span>
+                            <span><strong>Tip:</strong> Schedules continue running even after page refresh!</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div id="section-profile" class="section hidden p-4 md:p-8 animate-fade-in">
+            <div class="max-w-4xl mx-auto px-2 md:px-0">
             <div class="bg-surface-10 rounded-2xl p-8 shadow-2xl border border-primary-0/20">
                 <h2 class="text-2xl text-primary-0 font-bold mb-6 pb-3 border-b-2 border-primary-0 flex items-center gap-2">
                     <span class="iconify" data-icon="solar:user-bold" data-width="28"></span>
@@ -807,6 +923,7 @@
                 </button>
             </form>
         </div>
+        </div>
     </div>
 
     <script>
@@ -840,6 +957,37 @@
         let isDashboardInitialized = false;
 
         // Update sync mode description
+        // Handle database type change
+        function handleDatabaseTypeChange() {
+            const dbType = document.getElementById('db_type').value;
+            const syncModeSelect = document.getElementById('sync-mode');
+            const optionFullSync = document.getElementById('option-full-sync');
+            const optionRealtimeSync = document.getElementById('option-realtime-sync');
+            const postgresWarning = document.getElementById('postgresql-realtime-warning');
+            
+            if (dbType === 'postgresql') {
+                // Hide real-time sync options for PostgreSQL
+                if (optionFullSync) optionFullSync.style.display = 'none';
+                if (optionRealtimeSync) optionRealtimeSync.style.display = 'none';
+                
+                // Show warning
+                if (postgresWarning) postgresWarning.classList.remove('hidden');
+                
+                // Force select initial-sync if currently on a real-time option
+                if (syncModeSelect.value === 'full-sync' || syncModeSelect.value === 'realtime-sync') {
+                    syncModeSelect.value = 'initial-sync';
+                    updateSyncModeDescription();
+                }
+            } else {
+                // Show all options for MySQL
+                if (optionFullSync) optionFullSync.style.display = '';
+                if (optionRealtimeSync) optionRealtimeSync.style.display = '';
+                
+                // Hide warning
+                if (postgresWarning) postgresWarning.classList.add('hidden');
+            }
+        }
+        
         function updateSyncModeDescription() {
             const syncMode = document.getElementById('sync-mode').value;
             const descriptionText = document.getElementById('sync-mode-text');
@@ -847,7 +995,7 @@
             const descriptions = {
                 'full-sync': '<strong>Recommended for first-time setup.</strong> Performs complete schema migration, initial data transfer, catch-up sync, and then continues with real-time monitoring of changes.',
                 'initial-sync': '<strong>One-time migration.</strong> Transfers database schema and all data from source to target database, then stops. Use this if you only need to copy data once.',
-                'realtime-sync': '<strong>Live monitoring only.</strong> Assumes schema and data already exist in PostgreSQL. Only monitors and replicates new changes from MySQL binlog. Use this after initial migration is complete.'
+                'realtime-sync': '<strong>Live monitoring only.</strong> Assumes schema and data already exist in target database. Only monitors and replicates new changes from MySQL binlog. Use this after initial migration is complete.'
             };
             
             descriptionText.innerHTML = descriptions[syncMode] || descriptions['full-sync'];
@@ -870,6 +1018,13 @@
                     configInterval = setInterval(refreshSlaveStatuses, 3000);
                     refreshSlaveStatuses(); // Immediate refresh
                 }
+                // Load active schedules for home page
+                loadActiveSchedulesForHome();
+            }
+            
+            // Load schedules when schedules section is opened
+            if (sectionName === 'schedules') {
+                loadSchedules();
             }
         }
 
@@ -1163,10 +1318,11 @@
                     document.getElementById('poll_interval_secs').value = config.poll_interval_secs || 10;
                     document.getElementById('sync-mode').value = config.sync_mode || 'full-sync';
                     document.getElementById('reset-database').checked = config.reset_database || false;
-                    document.getElementById('gemini_api_key').value = config.gemini_api_key || '';
-                    document.getElementById('gemini_model').value = config.gemini_model || 'gemini-2.0-flash-exp';
                     
                     updateSlavesVisibility();
+                    
+                    // Update sync mode options based on database type
+                    handleDatabaseTypeChange();
                     
                     // Update databases overview on home page
                     updateDatabasesOverview(config);
@@ -1402,8 +1558,6 @@
                 poll_interval_secs: parseInt(document.getElementById('poll_interval_secs').value),
                 sync_mode: document.getElementById('sync-mode').value,
                 reset_database: document.getElementById('reset-database').checked,  // Reset database flag
-                gemini_api_key: document.getElementById('gemini_api_key').value || null,
-                gemini_model: document.getElementById('gemini_model').value,
             };
 
             // Debug: Log config being sent
@@ -1496,9 +1650,7 @@
                 // Additional fields for compatibility
                 batch_size: 100,
                 poll_interval_secs: 10,
-                sync_mode: "full-sync",
-                gemini_api_key: null,
-                gemini_model: "gemini-2.0-flash-exp"
+                sync_mode: "full-sync"
             };
             
             // Debug: Log what we're sending
@@ -1795,6 +1947,7 @@
             
             loadConfig();
             updateSyncModeDescription(); // Initialize sync mode description
+            handleDatabaseTypeChange(); // Initialize database type options
             initChart();
             startAutoRefresh();
             setupDatabaseTypeListeners(); // Setup listeners for database type changes
@@ -2269,6 +2422,456 @@
 
         // Check authentication on page load
         checkAuth();
+
+        // ============================================================================
+        // SCHEDULE MANAGEMENT FUNCTIONS
+        // ============================================================================
+
+        function cronToHumanReadable(cronExpr) {
+            const parts = cronExpr.split(' ');
+            if (parts.length < 6) return cronExpr;
+
+            const [sec, minute, hour, day, month, dayOfWeek] = parts;
+
+            // Check if it's a time delay pattern
+            if (hour.includes('*/') && day === '*' && dayOfWeek === '*') {
+                const hours = parseInt(hour.replace('*/', ''));
+                return `⏰ Every ${hours} hour${hours > 1 ? 's' : ''}`;
+            } else if (hour === '0' && day.includes('*/') && dayOfWeek === '*') {
+                const days = parseInt(day.replace('*/', ''));
+                return `📅 Every ${days} day${days > 1 ? 's' : ''}`;
+            } else {
+                // Exact time pattern
+                const hourNum = parseInt(hour);
+                const minuteNum = parseInt(minute);
+                const timeStr = `${hourNum.toString().padStart(2, '0')}:${minuteNum.toString().padStart(2, '0')}`;
+                
+                let frequencyText = '';
+                if (dayOfWeek === '*') frequencyText = 'Daily';
+                else if (dayOfWeek === '1-5') frequencyText = 'Weekdays';
+                else if (dayOfWeek === '0,6') frequencyText = 'Weekends';
+                else if (dayOfWeek === '1') frequencyText = 'Every Monday';
+                else if (dayOfWeek === '2') frequencyText = 'Every Tuesday';
+                else if (dayOfWeek === '3') frequencyText = 'Every Wednesday';
+                else if (dayOfWeek === '4') frequencyText = 'Every Thursday';
+                else if (dayOfWeek === '5') frequencyText = 'Every Friday';
+                else if (dayOfWeek === '6') frequencyText = 'Every Saturday';
+                else if (dayOfWeek === '0') frequencyText = 'Every Sunday';
+                
+                return `🕐 ${frequencyText} at ${timeStr}`;
+            }
+        }
+
+        async function loadSchedules() {
+            try {
+                const response = await fetch('/api/schedules');
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    const schedules = result.data;
+                    const schedulesContainer = document.getElementById('schedules-list');
+                    const emptyState = document.getElementById('schedules-empty');
+
+                    if (schedules.length === 0) {
+                        schedulesContainer.classList.add('hidden');
+                        emptyState.classList.remove('hidden');
+                    } else {
+                        schedulesContainer.classList.remove('hidden');
+                        emptyState.classList.add('hidden');
+                        
+                        schedulesContainer.innerHTML = schedules.map(schedule => `
+                            <div class="bg-surface-20 rounded-xl p-6 border border-primary-0/10 hover:border-primary-0/30 transition-all">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex-1">
+                                        <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                                            <span class="iconify" data-icon="solar:calendar-mark-bold" data-width="24"></span>
+                                            ${schedule.name}
+                                        </h3>
+                                        <p class="text-primary-20 text-base mb-2 font-semibold">
+                                            ${cronToHumanReadable(schedule.cron_expression)}
+                                        </p>
+                                        <p class="text-gray-500 font-mono text-xs mb-2">
+                                            Cron: ${schedule.cron_expression}
+                                        </p>
+                                        ${schedule.last_run ? `
+                                            <p class="text-gray-500 text-xs flex items-center gap-1">
+                                                <span class="iconify" data-icon="solar:history-bold" data-width="14"></span>
+                                                Last run: ${new Date(schedule.last_run).toLocaleString()}
+                                            </p>
+                                        ` : ''}
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" ${schedule.enabled ? 'checked' : ''} 
+                                                   onchange="toggleSchedule(${schedule.id}, this.checked)"
+                                                   class="sr-only peer">
+                                            <div class="w-11 h-6 bg-surface-0 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-0/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-0"></div>
+                                        </label>
+                                        <button onclick="editSchedule(${schedule.id})" 
+                                                class="px-4 py-2 bg-info-0 hover:bg-info-10 text-white rounded-lg transition-all flex items-center gap-1">
+                                            <span class="iconify" data-icon="solar:pen-bold" data-width="16"></span>
+                                            Edit
+                                        </button>
+                                        <button onclick="deleteSchedule(${schedule.id})" 
+                                                class="px-4 py-2 bg-danger-0 hover:bg-danger-10 text-white rounded-lg transition-all flex items-center gap-1">
+                                            <span class="iconify" data-icon="solar:trash-bin-trash-bold" data-width="16"></span>
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 text-sm">
+                                    <span class="inline-block w-3 h-3 rounded-full ${schedule.enabled ? 'bg-success-0' : 'bg-gray-500'}"></span>
+                                    <span class="text-gray-400">${schedule.enabled ? 'Active' : 'Disabled'}</span>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load schedules:', error);
+            }
+        }
+
+        async function loadActiveSchedulesForHome() {
+            try {
+                const response = await fetch('/api/schedules/active');
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    const schedules = result.data;
+                    const schedulesContainer = document.getElementById('active-schedules-list');
+                    const noSchedulesMsg = document.getElementById('no-active-schedules');
+                    const badge = document.getElementById('active-schedules-count-badge');
+
+                    badge.textContent = schedules.length;
+
+                    if (schedules.length === 0) {
+                        schedulesContainer.classList.add('hidden');
+                        noSchedulesMsg.classList.remove('hidden');
+                    } else {
+                        schedulesContainer.classList.remove('hidden');
+                        noSchedulesMsg.classList.add('hidden');
+                        
+                        schedulesContainer.innerHTML = schedules.map(schedule => `
+                            <div class="bg-gradient-to-r from-primary-0/20 to-primary-10/20 border-2 border-primary-0 rounded-xl p-6 hover:shadow-lg hover:shadow-primary-0/20 transition-all">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                                            <span class="iconify text-primary-20" data-icon="solar:calendar-mark-bold" data-width="24"></span>
+                                            ${schedule.name}
+                                        </h3>
+                                        <p class="text-primary-20 text-base mb-2 font-semibold">
+                                            ${cronToHumanReadable(schedule.cron_expression)}
+                                        </p>
+                                        ${schedule.last_run ? `
+                                            <p class="text-gray-400 text-sm flex items-center gap-1">
+                                                <span class="iconify" data-icon="solar:history-bold" data-width="14"></span>
+                                                Last run: ${new Date(schedule.last_run).toLocaleString()}
+                                            </p>
+                                        ` : `
+                                            <p class="text-gray-400 text-sm flex items-center gap-1">
+                                                <span class="iconify" data-icon="solar:clock-circle-bold" data-width="14"></span>
+                                                Waiting for next run...
+                                            </p>
+                                        `}
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="inline-flex items-center gap-2 px-3 py-1 bg-success-0 text-white text-sm font-semibold rounded-full">
+                                            <span class="inline-block w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                                            Active
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load active schedules:', error);
+            }
+        }
+
+        function openScheduleModal(scheduleId = null) {
+            const modal = document.getElementById('schedule-modal');
+            const form = document.getElementById('schedule-form');
+            const title = document.getElementById('schedule-modal-title');
+            
+            form.reset();
+            document.getElementById('schedule-id').value = '';
+            document.getElementById('schedule-enabled').checked = true;
+            title.textContent = 'Add Schedule';
+            
+            // Reset to default type
+            setScheduleType('delay');
+            updateCronExpression();
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeScheduleModal() {
+            const modal = document.getElementById('schedule-modal');
+            modal.classList.add('hidden');
+        }
+
+        function setScheduleType(type) {
+            const delayBtn = document.getElementById('type-delay');
+            const exactBtn = document.getElementById('type-exact');
+            const delayOptions = document.getElementById('delay-options');
+            const exactOptions = document.getElementById('exact-options');
+
+            if (type === 'delay') {
+                // Style buttons
+                delayBtn.classList.remove('bg-surface-20', 'border-surface-30', 'text-gray-300');
+                delayBtn.classList.add('bg-primary-0/20', 'border-primary-0', 'text-white');
+                exactBtn.classList.remove('bg-primary-0/20', 'border-primary-0', 'text-white');
+                exactBtn.classList.add('bg-surface-20', 'border-surface-30', 'text-gray-300');
+                
+                // Show/hide options
+                delayOptions.classList.remove('hidden');
+                exactOptions.classList.add('hidden');
+            } else {
+                // Style buttons
+                exactBtn.classList.remove('bg-surface-20', 'border-surface-30', 'text-gray-300');
+                exactBtn.classList.add('bg-primary-0/20', 'border-primary-0', 'text-white');
+                delayBtn.classList.remove('bg-primary-0/20', 'border-primary-0', 'text-white');
+                delayBtn.classList.add('bg-surface-20', 'border-surface-30', 'text-gray-300');
+                
+                // Show/hide options
+                exactOptions.classList.remove('hidden');
+                delayOptions.classList.add('hidden');
+            }
+            
+            updateCronExpression();
+        }
+
+        function updateCronExpression() {
+            const delayOptions = document.getElementById('delay-options');
+            const isDelay = !delayOptions.classList.contains('hidden');
+            
+            let cronExpression = '';
+            
+            if (isDelay) {
+                const value = parseInt(document.getElementById('delay-value').value) || 12;
+                const unit = document.getElementById('delay-unit').value;
+                const preview = document.getElementById('delay-preview');
+                
+                if (unit === 'hours') {
+                    cronExpression = `0 0 */${value} * * *`;
+                    preview.textContent = `Runs every ${value} hour${value > 1 ? 's' : ''}`;
+                } else { // days
+                    cronExpression = `0 0 0 */${value} * *`;
+                    preview.textContent = `Runs every ${value} day${value > 1 ? 's' : ''}`;
+                }
+            } else {
+                const time = document.getElementById('exact-time').value || '15:30';
+                const frequency = document.getElementById('exact-frequency').value;
+                const preview = document.getElementById('exact-preview');
+                
+                const [hour, minute] = time.split(':');
+                
+                // Convert frequency to cron day of week (sec min hour day month day_of_week)
+                const frequencyMap = {
+                    'daily': '* * *',
+                    'weekdays': '* * 1-5',
+                    'weekends': '* * 0,6',
+                    'monday': '* * 1',
+                    'tuesday': '* * 2',
+                    'wednesday': '* * 3',
+                    'thursday': '* * 4',
+                    'friday': '* * 5',
+                    'saturday': '* * 6',
+                    'sunday': '* * 0'
+                };
+                
+                const frequencyLabel = {
+                    'daily': 'daily',
+                    'weekdays': 'on weekdays',
+                    'weekends': 'on weekends',
+                    'monday': 'every Monday',
+                    'tuesday': 'every Tuesday',
+                    'wednesday': 'every Wednesday',
+                    'thursday': 'every Thursday',
+                    'friday': 'every Friday',
+                    'saturday': 'every Saturday',
+                    'sunday': 'every Sunday'
+                };
+                
+                cronExpression = `0 ${minute} ${hour} ${frequencyMap[frequency]}`;
+                preview.textContent = `Runs ${frequencyLabel[frequency]} at ${time}`;
+            }
+            
+            document.getElementById('schedule-cron').value = cronExpression;
+        }
+
+        // Add event listeners for live preview updates
+        document.addEventListener('DOMContentLoaded', function() {
+            const delayValue = document.getElementById('delay-value');
+            const delayUnit = document.getElementById('delay-unit');
+            const exactTime = document.getElementById('exact-time');
+            const exactFrequency = document.getElementById('exact-frequency');
+            
+            if (delayValue) delayValue.addEventListener('input', updateCronExpression);
+            if (delayUnit) delayUnit.addEventListener('change', updateCronExpression);
+            if (exactTime) exactTime.addEventListener('change', updateCronExpression);
+            if (exactFrequency) exactFrequency.addEventListener('change', updateCronExpression);
+            
+            // Schedule form submission
+            const scheduleForm = document.getElementById('schedule-form');
+            if (scheduleForm) {
+                scheduleForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+
+                    const id = document.getElementById('schedule-id').value;
+                    const schedule = {
+                        name: document.getElementById('schedule-name').value,
+                        cron_expression: document.getElementById('schedule-cron').value,
+                        enabled: document.getElementById('schedule-enabled').checked
+                    };
+
+                    try {
+                        const url = id ? `/api/schedules/${id}` : '/api/schedules';
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(schedule)
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                            closeScheduleModal();
+                            await loadSchedules();
+                        } else {
+                            alert('Failed to save schedule: ' + result.message);
+                        }
+                    } catch (error) {
+                        console.error('Failed to save schedule:', error);
+                        alert('Failed to save schedule');
+                    }
+                });
+            }
+        });
+
+        async function editSchedule(id) {
+            try {
+                const response = await fetch('/api/schedules');
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    const schedule = result.data.find(s => s.id === id);
+                    if (schedule) {
+                        document.getElementById('schedule-id').value = schedule.id;
+                        document.getElementById('schedule-name').value = schedule.name;
+                        document.getElementById('schedule-enabled').checked = schedule.enabled;
+                        document.getElementById('schedule-modal-title').textContent = 'Edit Schedule';
+                        
+                        // Parse cron expression and populate fields
+                        parseCronExpression(schedule.cron_expression);
+                        
+                        document.getElementById('schedule-modal').classList.remove('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load schedule:', error);
+                alert('Failed to load schedule for editing');
+            }
+        }
+
+        function parseCronExpression(cronExpr) {
+            const parts = cronExpr.split(' ');
+            if (parts.length < 6) {
+                // Invalid cron, default to delay mode
+                setScheduleType('delay');
+                return;
+            }
+
+            const [sec, minute, hour, day, month, dayOfWeek] = parts;
+
+            // Check if it's a time delay pattern
+            if (hour.includes('*/') && day === '*' && dayOfWeek === '*') {
+                // Hours pattern (e.g., "0 0 */12 * * *")
+                setScheduleType('delay');
+                const hours = parseInt(hour.replace('*/', ''));
+                document.getElementById('delay-value').value = hours;
+                document.getElementById('delay-unit').value = 'hours';
+                updateCronExpression();
+            } else if (hour === '0' && day.includes('*/') && dayOfWeek === '*') {
+                // Days pattern (e.g., "0 0 0 */2 * *")
+                setScheduleType('delay');
+                const days = parseInt(day.replace('*/', ''));
+                document.getElementById('delay-value').value = days;
+                document.getElementById('delay-unit').value = 'days';
+                updateCronExpression();
+            } else {
+                // Exact time pattern
+                setScheduleType('exact');
+                
+                // Set time
+                const hourNum = parseInt(hour);
+                const minuteNum = parseInt(minute);
+                const timeStr = `${hourNum.toString().padStart(2, '0')}:${minuteNum.toString().padStart(2, '0')}`;
+                document.getElementById('exact-time').value = timeStr;
+                
+                // Determine frequency
+                let frequency = 'daily';
+                if (dayOfWeek === '1-5') frequency = 'weekdays';
+                else if (dayOfWeek === '0,6') frequency = 'weekends';
+                else if (dayOfWeek === '1') frequency = 'monday';
+                else if (dayOfWeek === '2') frequency = 'tuesday';
+                else if (dayOfWeek === '3') frequency = 'wednesday';
+                else if (dayOfWeek === '4') frequency = 'thursday';
+                else if (dayOfWeek === '5') frequency = 'friday';
+                else if (dayOfWeek === '6') frequency = 'saturday';
+                else if (dayOfWeek === '0') frequency = 'sunday';
+                
+                document.getElementById('exact-frequency').value = frequency;
+                updateCronExpression();
+            }
+        }
+
+        async function toggleSchedule(id, enabled) {
+            try {
+                const response = await fetch(`/api/schedules/${id}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    await loadSchedules();
+                } else {
+                    alert('Failed to toggle schedule: ' + result.message);
+                    await loadSchedules();
+                }
+            } catch (error) {
+                console.error('Failed to toggle schedule:', error);
+                alert('Failed to toggle schedule');
+                await loadSchedules();
+            }
+        }
+
+        async function deleteSchedule(id) {
+            if (!confirm('Are you sure you want to delete this schedule?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/schedules/${id}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    await loadSchedules();
+                } else {
+                    alert('Failed to delete schedule: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Failed to delete schedule:', error);
+                alert('Failed to delete schedule');
+            }
+        }
+
     </script>
     
     <!-- Buy Me a Coffee Floating Button -->
@@ -2281,6 +2884,144 @@
         <span class="hidden sm:inline">Buy Me a Coffee</span>
         <span class="inline sm:hidden">☕</span>
     </a>
+
+    <!-- Schedule Modal -->
+    <div id="schedule-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-surface-10 rounded-3xl p-8 shadow-2xl border border-primary-0/30 max-w-lg w-full">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-primary-0 flex items-center gap-2">
+                    <span class="iconify" data-icon="solar:calendar-add-bold" data-width="28"></span>
+                    <span id="schedule-modal-title">Add Schedule</span>
+                </h3>
+                <button onclick="closeScheduleModal()" class="text-gray-400 hover:text-white transition-colors">
+                    <span class="iconify" data-icon="solar:close-circle-bold" data-width="32"></span>
+                </button>
+            </div>
+
+            <form id="schedule-form" class="space-y-6">
+                <input type="hidden" id="schedule-id" value="">
+                
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Schedule Name</label>
+                    <input 
+                        type="text" 
+                        id="schedule-name" 
+                        required
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                        placeholder="e.g., Daily Backup"
+                    >
+                </div>
+
+                <!-- Schedule Type Selector -->
+                <div>
+                    <label class="block text-gray-300 font-semibold mb-3 text-sm">Schedule Type</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button 
+                            type="button" 
+                            id="type-delay" 
+                            onclick="setScheduleType('delay')"
+                            class="schedule-type-btn px-4 py-3 bg-primary-0/20 border-2 border-primary-0 rounded-xl text-white font-semibold transition-all hover:bg-primary-0/30 flex items-center justify-center gap-2"
+                        >
+                            <span class="iconify" data-icon="solar:clock-circle-bold" data-width="20"></span>
+                            Time Delay
+                        </button>
+                        <button 
+                            type="button" 
+                            id="type-exact" 
+                            onclick="setScheduleType('exact')"
+                            class="schedule-type-btn px-4 py-3 bg-surface-20 border-2 border-surface-30 rounded-xl text-gray-300 font-semibold transition-all hover:bg-surface-30 flex items-center justify-center gap-2"
+                        >
+                            <span class="iconify" data-icon="solar:calendar-mark-bold" data-width="20"></span>
+                            Exact Time
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Time Delay Option -->
+                <div id="delay-options" class="space-y-4">
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Run Every</label>
+                    <div class="flex gap-3">
+                        <input 
+                            type="number" 
+                            id="delay-value" 
+                            min="1"
+                            value="12"
+                            class="flex-1 px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                            placeholder="12"
+                        >
+                        <select 
+                            id="delay-unit" 
+                            class="flex-1 px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all cursor-pointer"
+                        >
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                        </select>
+                    </div>
+                    <p class="text-sm text-gray-400 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:info-circle-bold" data-width="16"></span>
+                        <span id="delay-preview">Runs every 12 hours</span>
+                    </p>
+                </div>
+
+                <!-- Exact Time Option -->
+                <div id="exact-options" class="space-y-4 hidden">
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Time</label>
+                    <input 
+                        type="time" 
+                        id="exact-time" 
+                        value="15:30"
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all"
+                    >
+                    
+                    <label class="block text-gray-300 font-semibold mb-2 text-sm">Frequency</label>
+                    <select 
+                        id="exact-frequency" 
+                        class="w-full px-4 py-3 bg-surface-0 border-2 border-surface-30 rounded-xl text-white focus:border-primary-0 focus:ring-4 focus:ring-primary-0/20 outline-none transition-all cursor-pointer"
+                    >
+                        <option value="daily">Every Day</option>
+                        <option value="weekdays">Weekdays (Mon-Fri)</option>
+                        <option value="weekends">Weekends (Sat-Sun)</option>
+                        <option value="monday">Every Monday</option>
+                        <option value="tuesday">Every Tuesday</option>
+                        <option value="wednesday">Every Wednesday</option>
+                        <option value="thursday">Every Thursday</option>
+                        <option value="friday">Every Friday</option>
+                        <option value="saturday">Every Saturday</option>
+                        <option value="sunday">Every Sunday</option>
+                    </select>
+                    <p class="text-sm text-gray-400 flex items-center gap-2">
+                        <span class="iconify" data-icon="solar:info-circle-bold" data-width="16"></span>
+                        <span id="exact-preview">Runs daily at 15:30</span>
+                    </p>
+                </div>
+
+                <!-- Hidden field for actual cron expression -->
+                <input type="hidden" id="schedule-cron" value="0 */12 * * *">
+
+                <div class="flex items-center justify-between p-4 bg-surface-20 rounded-xl">
+                    <label for="schedule-enabled" class="text-gray-300 font-semibold flex items-center gap-2 cursor-pointer">
+                        <span class="iconify" data-icon="solar:power-bold" data-width="20"></span>
+                        Enable Schedule
+                    </label>
+                    <input 
+                        type="checkbox" 
+                        id="schedule-enabled" 
+                        checked
+                        class="w-6 h-6 rounded border-2 border-primary-0 text-primary-0 focus:ring-2 focus:ring-primary-0 cursor-pointer"
+                    >
+                </div>
+
+                <div class="flex gap-4">
+                    <button type="button" onclick="closeScheduleModal()" class="flex-1 px-6 py-3 bg-surface-20 hover:bg-surface-30 text-white font-semibold rounded-xl transition-all duration-300">
+                        Cancel
+                    </button>
+                    <button type="submit" class="flex-1 px-6 py-3 bg-gradient-to-r from-primary-0 to-primary-10 text-white font-semibold rounded-xl shadow-lg hover:-translate-y-1 hover:shadow-primary-10/50 transition-all duration-300">
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 </body>
 </html>
-

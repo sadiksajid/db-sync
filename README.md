@@ -1,57 +1,75 @@
 # Database Synchronization Proxy
 
-A powerful, real-time database synchronization tool that syncs data between identical database types. Built with Rust for high performance and reliability.
+A powerful, production-grade database synchronization tool that replicates data between MySQL or PostgreSQL databases. Built with Rust for high performance, reliability, and parallel processing.
 
-## 🚀 Features
+## 🚀 Key Features
 
-### Core Synchronization
-- **Same-Type Sync**: Synchronize MySQL-to-MySQL or PostgreSQL-to-PostgreSQL
-- **Schema Migration**: Automatic copying of database schemas
-- **Initial Data Transfer**: Bulk transfer of existing data with configurable batch sizes
-- **Real-time Sync** (MySQL only): Continuous monitoring and replication of INSERT, UPDATE, DELETE operations
-- **Catch-up Sync** (MySQL only): Ensures no data is lost during initial migration by replaying changes
-- **Three Sync Modes**: Choose between Full Sync, Initial Sync Only, or Real-time Sync Only
+### Multi-Slave Synchronization
+- **Parallel Sync**: Synchronize to multiple slave databases simultaneously
+- **Automatic Status Tracking**: Real-time monitoring of each slave database connection
+- **Individual Slave Management**: Add, edit, or remove slave databases independently
+- **Concurrent Processing**: Leverages Tokio for efficient parallel operations
+
+### Synchronization Modes
+- **Full Sync** (MySQL only): Initial migration + continuous real-time monitoring
+- **Initial Sync Only**: One-time schema and data transfer (MySQL & PostgreSQL)
+- **Real-time Sync Only** (MySQL only): Continuous change monitoring via binlog
+- **Reset Mode**: Optionally DROP and recreate slave databases before sync
+
+### Automated Scheduling
+- **Cron-Based Scheduler**: Schedule automatic syncs at specific times or intervals
+- **User-Friendly Interface**: Define schedules with:
+  - **Time Delay**: Run every X hours or days
+  - **Exact Time**: Run at specific times (e.g., daily at 15:30, weekdays at 09:00)
+- **Multiple Schedules**: Create unlimited scheduled tasks
+- **Automatic Reset**: Scheduled syncs automatically reset slave databases for fresh data
+- **Persistent**: Schedules continue running even after page refresh or system restart
 
 ### Database Support
-- **MySQL to MySQL**: Complete synchronization between MySQL databases
-  - Supports real-time change detection using general_log
-  - Catch-up sync to replay missed changes
+- **MySQL to MySQL**: Complete synchronization with real-time monitoring
+  - Uses `general_log` for change detection
+  - Supports `mysqldump` for reliable data transfer
 - **PostgreSQL to PostgreSQL**: Schema and data synchronization
-  - Initial sync and data transfer
-  - Real-time sync (coming soon)
+  - Uses `pg_dump` and `psql` for production-grade transfers
+  - Initial sync only (real-time not available)
 
-### Web UI
-- **Modern Dashboard**: Intuitive web interface for configuration and monitoring
+### Modern Web UI
+- **Responsive Dashboard**: Works on desktop, tablet, and mobile devices
 - **Live Statistics**: Real-time operation tracking with hourly analytics
-- **Interactive Charts**: Beautiful line graphs showing sync operations over time
-- **User Authentication**: Secure login system with session management
+- **Interactive Charts**: Beautiful visualizations of sync operations over time
+- **User Authentication**: Secure login system with bcrypt password hashing
 - **Persistent Configuration**: All settings saved in SQLite database
+- **Dark Theme**: Modern, eye-friendly interface
+- **Ad Integration**: Built-in ad display system
 
-### Monitoring & Analytics
-- **Operation Statistics**: Track INSERT, UPDATE, DELETE counts by hour
-- **Success/Failure Tracking**: Monitor operation success rates
-- **Live Logs**: Real-time logging of all sync activities
-- **SQLite Storage**: Persistent statistics with queryable data
+### Production Features
+- **Data Integrity**: Uses standard tools (`mysqldump`, `pg_dump`) for reliable transfers
+- **Error Handling**: Comprehensive error reporting with detailed logs
+- **Connection Testing**: Test database connections before starting sync
+- **Session Management**: Secure authentication with HTTP-only cookies
+- **Docker Ready**: Full Docker and Docker Compose support
 
 ## 📋 Requirements
 
 ### Source Database
 - **MySQL**: MySQL 5.7+ or MariaDB 10.2+
-- `general_log` must be enabled (tool enables it automatically if you have SUPER privilege)
-  - User with permissions: `SELECT` on source database, `SELECT` on `mysql.general_log`, `SUPER` privilege
+  - `general_log` must be enabled for real-time sync (tool enables it automatically with SUPER privilege)
+  - User permissions: `SELECT` on source database, `SELECT` on `mysql.general_log`, `SUPER` privilege
 - **PostgreSQL**: PostgreSQL 10+
-  - User with permissions: `SELECT` on source database
+  - User permissions: `SELECT` on source database
 
-### Target Database
+### Slave Databases
 - **MySQL**: MySQL 5.7+ or MariaDB 10.2+
-  - User with permissions: `CREATE` tables, `INSERT`, `UPDATE`, `DELETE`
+  - User permissions: `CREATE DATABASE`, `DROP DATABASE`, `CREATE` tables, `INSERT`, `UPDATE`, `DELETE`
 - **PostgreSQL**: PostgreSQL 10+
-  - User with permissions: `CREATE` tables and schemas, `INSERT`, `UPDATE`, `DELETE`
+  - User permissions: `CREATE DATABASE`, `DROP DATABASE`, `CREATE` tables and schemas, `INSERT`, `UPDATE`, `DELETE`
 
 ### System Requirements
 - Docker (recommended) or Rust 1.70+
-- 512MB RAM minimum (1GB+ recommended)
-- Network access between source and target databases
+- 512MB RAM minimum (1GB+ recommended for multiple slaves)
+- Network access between source and all slave databases
+- `mysql` client for MySQL sync
+- `psql` and `pg_dump` clients for PostgreSQL sync
 
 ## 🔧 Installation
 
@@ -62,17 +80,18 @@ A powerful, real-time database synchronization tool that syncs data between iden
 cd "DB sync"
 ```
 
-2. **Run the Web UI**
+2. **Start with Docker Compose**
 ```bash
-./run-web-ui.sh
+docker-compose up -d
 ```
 
 The Web UI will be available at http://localhost:5009
 
-### Using Docker Compose
+### Using Docker Run
 
 ```bash
-docker-compose up -d
+docker build -t db-sync-proxy .
+docker run -d -p 5009:5009 -v ./db_sync_data:/app/data db-sync-proxy --web-ui
 ```
 
 ### From Source
@@ -80,6 +99,9 @@ docker-compose up -d
 ```bash
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install database clients (Ubuntu/Debian)
+sudo apt-get install mysql-client postgresql-client
 
 # Build the project
 cargo build --release
@@ -90,226 +112,220 @@ cargo build --release
 
 ## ⚙️ Configuration
 
-### Web UI Configuration
+### Initial Setup
 
-1. Open http://localhost:5009 in your browser
-2. Create first user account (appears on first run)
-3. Go to **Settings** tab
-4. Fill in source and target database connection details:
-   - **Source DB Type**: MySQL or PostgreSQL
-   - **Source**: Host, Port, Database, Username, Password
-   - **Target DB Type**: MySQL or PostgreSQL (must match source type)
-   - **Target**: Host, Port, Database, Username, Password
-5. Configure sync options:
-   - **Batch Size**: Records per batch (default: 100)
-   - **Poll Interval**: Seconds between change checks (default: 10)
-   - **Sync Mode**: Full Sync / Initial Only / Real-time Only
-6. Click **Save Configuration**
+1. **Open** http://localhost:5009 in your browser
+2. **Create** first user account (appears on first run)
+3. **Login** with your credentials
 
-### Environment Variables (CLI Mode)
+### Configure Master Database
 
-For **MySQL to MySQL** sync:
+1. Go to **Settings** tab
+2. Select **Database Type** (MySQL or PostgreSQL)
+3. Fill in **Source Database** details:
+   - Host, Port, Database Name
+   - Username, Password
+4. Click **Test Connection** to verify
 
-```bash
-# Database types
-export SOURCE_DB_TYPE=mysql
-export TARGET_DB_TYPE=mysql
+### Add Slave Databases
 
-# Source MySQL Configuration
-export SOURCE_DB_HOST=localhost
-export SOURCE_DB_PORT=3306
-export SOURCE_DB_DATABASE=sourcedb
-export SOURCE_DB_USERNAME=user
-export SOURCE_DB_PASSWORD=password
+1. In the **Slave Databases** section
+2. Fill in slave database details:
+   - Host, Port, Database Name
+   - Username, Password
+3. Click **Add Slave Database**
+4. Repeat for multiple slaves (supports unlimited slaves)
+5. Each slave's status is displayed with color indicators
 
-# Target MySQL Configuration
-export TARGET_DB_HOST=localhost
-export TARGET_DB_PORT=3307
-export TARGET_DB_DATABASE=targetdb
-export TARGET_DB_USERNAME=user
-export TARGET_DB_PASSWORD=password
+### Configure Sync Options
 
-# Sync Configuration
-export BATCH_SIZE=100
-export POLL_INTERVAL_SECS=10
-```
-
-For **PostgreSQL to PostgreSQL** sync:
-
-```bash
-# Database types
-export SOURCE_DB_TYPE=postgresql
-export TARGET_DB_TYPE=postgresql
-
-# Source PostgreSQL Configuration
-export SOURCE_DB_HOST=localhost
-export SOURCE_DB_PORT=5432
-export SOURCE_DB_DATABASE=sourcedb
-export SOURCE_DB_USERNAME=user
-export SOURCE_DB_PASSWORD=password
-
-# Target PostgreSQL Configuration
-export TARGET_DB_HOST=localhost
-export TARGET_DB_PORT=5433
-export TARGET_DB_DATABASE=targetdb
-export TARGET_DB_USERNAME=user
-export TARGET_DB_PASSWORD=password
-
-# Sync Configuration
-export BATCH_SIZE=100
-```
+- **Batch Size**: Records per batch for data transfer (default: 100)
+- **Poll Interval**: Seconds between change checks for real-time mode (default: 10)
+- **Reset Database**: Enable to DROP and recreate slave databases before each sync
 
 ## 🎯 Usage
 
-### Web UI Mode (Recommended)
+### Manual Synchronization
 
-1. **Start the application**
-   ```bash
-   ./run-web-ui.sh
-   ```
+1. **Go to Home tab**
+2. **Select Sync Mode**:
+   - **Full Sync** (MySQL only): Initial migration + real-time monitoring
+   - **Initial Sync Only**: One-time schema and data transfer
+   - **Real-time Sync Only** (MySQL only): Monitor changes only
+3. **Check Reset Database** if you want fresh slaves (⚠️ Warning: Deletes all data in slaves)
+4. **Click Start Sync**
+5. **Monitor progress** in real-time:
+   - Live logs showing each operation
+   - Slave database status indicators
+   - Quick stats (tables synced, rows processed)
 
-2. **Access the dashboard** at http://localhost:5009
+### Scheduled Synchronization
 
-3. **Configure connections** in the Settings tab
+1. **Go to Schedules tab**
+2. **Click Add Schedule**
+3. **Choose Schedule Type**:
+   
+   **Time Delay:**
+   - Repeat every X hours or days
+   - Examples: Every 12 hours, Every 2 days
+   
+   **Exact Time:**
+   - Run at specific time with recurrence
+   - Examples: Daily at 15:30, Weekdays at 09:00, Every Monday at 08:00
 
-4. **Select sync mode** in the Home tab:
-   - **Full Sync**: Complete migration + continuous monitoring (recommended for first-time, MySQL only)
-   - **Initial Sync Only**: Schema + data transfer, then stops
-   - **Real-time Sync Only**: Only monitors changes (MySQL only, assumes data already migrated)
+4. **Name your schedule** (e.g., "Daily Backup", "Hourly Sync")
+5. **Enable/Disable** with toggle switch
+6. **Save** - Schedule runs automatically in background
 
-5. **Start synchronization** by clicking "Start Sync"
+**Important Notes:**
+- Schedules run "Initial Sync Only" mode (Schema + Data)
+- All configured slave databases are synced automatically
+- Scheduled syncs always reset slave databases (fresh data)
+- Schedules persist across restarts and page refreshes
 
-6. **Monitor progress**:
-   - **Home**: Current status and quick stats
-   - **Logs**: Detailed operation logs
-   - **Statistics**: Operation counts and performance metrics
-   - **Chart**: Hourly operation trends with interactive line graph
+### Monitoring
 
-### CLI Mode
-
-#### MySQL to MySQL - Full Sync (Initial + Real-time)
-```bash
-export SOURCE_DB_TYPE=mysql
-export TARGET_DB_TYPE=mysql
-# ... set other environment variables ...
-./rebuild-and-run.sh --full-sync
-```
-
-#### PostgreSQL to PostgreSQL - Initial Sync Only
-```bash
-export SOURCE_DB_TYPE=postgresql
-export TARGET_DB_TYPE=postgresql
-# ... set other environment variables ...
-./rebuild-and-run.sh --initial-sync
-```
+- **Home Tab**: Current status, active schedules, connected databases
+- **Statistics Tab**: Detailed operation counts and success rates
+- **Chart Tab**: Visual graphs of operations over time
+- **Schedules Tab**: Manage all scheduled tasks
 
 ## 🔄 Sync Modes Explained
 
-### 1. Full Sync (MySQL only - Recommended for First-Time)
+### 1. Full Sync (MySQL Only)
 **What it does:**
-- Phase 1: Migrates schema and transfers all existing data
-- Phase 2: Replays changes that occurred during initial transfer (catch-up)
-- Phase 3: Starts real-time monitoring of new changes
+- Phase 1: Schema migration and initial data transfer using `mysqldump`
+- Phase 2: Catch-up sync (replays changes during transfer)
+- Phase 3: Real-time monitoring via general_log
 
 **Best for:**
-- First-time migration between MySQL databases
+- First-time MySQL migration
 - Complete database replication
-- Ensuring zero data loss
+- Continuous synchronization
 
-### 2. Initial Sync Only
+### 2. Initial Sync Only (MySQL & PostgreSQL)
 **What it does:**
-- Copies schema to target database
-- Transfers all existing data
+- Exports schema using `mysqldump` or `pg_dump`
+- Transfers all data in batches
 - Stops after completion
 
 **Best for:**
-- One-time data migration
-- Creating a snapshot of current data
+- One-time migration
+- Creating database snapshots
+- Scheduled backups
 - Both MySQL and PostgreSQL
 
-### 3. Real-time Sync Only (MySQL only)
+### 3. Real-time Sync Only (MySQL Only)
 **What it does:**
-- Assumes schema and data already exist in target database
-- Only monitors and replicates new changes
-- Uses MySQL general_log for change detection
+- Monitors MySQL general_log for changes
+- Replicates INSERT, UPDATE, DELETE operations
+- Assumes schema and initial data already exist
 
 **Best for:**
-- Resuming sync after interruption
-- Monitoring ongoing changes after initial migration
-- Continuous replication setups
+- Resuming after interruption
+- Ongoing replication
+- After initial migration
+
+## 📅 Scheduling Examples
+
+### Time Delay Examples
+```
+Every 6 hours    → Runs every 6 hours from now
+Every 12 hours   → Runs twice daily
+Every 2 days     → Runs every 48 hours
+```
+
+### Exact Time Examples
+```
+Daily at 02:00           → Every day at 2 AM
+Weekdays at 09:00        → Monday-Friday at 9 AM
+Weekends at 23:00        → Saturday-Sunday at 11 PM
+Every Monday at 08:00    → Weekly backup
+Every Friday at 18:00    → End of week sync
+```
+
+**Cron Format (Auto-Generated):**
+The system automatically converts your selections to cron expressions (6-field format with seconds).
 
 ## 📊 Statistics & Monitoring
 
 ### Real-Time Statistics
-The tool tracks every operation and provides:
 - **Hourly aggregation**: Operations grouped by hour
-- **Operation breakdown**: Separate counts for INSERT, UPDATE, DELETE
+- **Operation breakdown**: INSERT, UPDATE, DELETE counts
 - **Success rates**: Track successful vs failed operations
-- **Persistent storage**: All stats saved to SQLite database
+- **Per-slave tracking**: Monitor each slave individually
+- **Persistent storage**: SQLite database for historical data
 
-### Interactive Chart
-- **Line graph** showing operation trends over time
-- **Three colored lines**: Green (INSERT), Blue (UPDATE), Red (DELETE)
-- **Smooth curves** with filled areas for easy visualization
-- **Hover tooltips** showing exact operation counts
-- **Last 24 hours** of data displayed
+### Interactive Charts
+- **Line graphs**: Operation trends over time
+- **Color-coded**: Green (INSERT), Blue (UPDATE), Red (DELETE)
+- **Smooth curves**: Easy-to-read visualizations
+- **Hover tooltips**: Exact counts on demand
+- **Last 24 hours**: Recent activity at a glance
 
-### Accessing Statistics
-- **Web UI**: Go to Chart tab for visual representation
-- **Database**: Query `operation_stats` table in SQLite for custom analytics
-- **API**: `/api/chart-stats` endpoint returns JSON data
+### Slave Database Status
+Each slave shows:
+- **Connection status**: Connected / Disconnected indicator
+- **Last sync time**: When last synchronized
+- **Current state**: Syncing / Idle / Error
 
 ## 🔐 Security
 
 ### Authentication
-- **First-time setup**: Create initial admin user on first launch
-- **Password hashing**: bcrypt with secure salt
+- **First-time setup**: Create admin user on first launch
+- **Password hashing**: bcrypt with secure salt (cost: 12)
 - **Session management**: HTTP-only cookies with expiration
 - **Protected routes**: All API endpoints require authentication
+- **Logout**: Secure session termination
 
 ### User Management
-- **Profile updates**: Change email and password anytime
+- **Profile**: View and update email
+- **Password change**: Secure password updates with re-hashing
 - **Session timeout**: Automatic logout after inactivity
-- **Secure storage**: User credentials stored in SQLite with encryption
+
+### Database Security
+- **Credentials encryption**: Sensitive data stored securely in SQLite
+- **No plaintext passwords**: All passwords hashed before storage
+- **Secure connections**: Supports SSL/TLS for database connections
 
 ## 🐳 Docker Deployment
 
-### Using Docker Compose
+### Docker Compose (Included)
 
-Create `docker-compose.yml`:
 ```yaml
 version: '3.8'
 
 services:
   db-sync:
-    image: db_sync_proxy:latest
+    build: .
     ports:
       - "5009:5009"
     volumes:
-      - ./db_sync_data:/app/data
+      - ./data:/app/data
     environment:
       - RUST_LOG=info
-    command: --web-ui
+    command: ["--web-ui"]
     restart: unless-stopped
 ```
 
-Run:
-```bash
-docker-compose up -d
-```
-
 ### Volume Persistence
-The `/app/data` volume contains:
+The `/app/data` directory contains:
 - `config.db`: SQLite database with all settings
 - User credentials and sessions
-- Operation statistics
-- Configuration history
+- Operation statistics and logs
+- Schedule configurations
+- Connection history
+
+### Environment Variables
+- `RUST_LOG`: Logging level (debug, info, warn, error)
+- All database config done via Web UI
 
 ## 🛠️ Troubleshooting
 
 ### General_log Errors (MySQL)
 **Problem**: `general_log is not enabled`
-**Solution**: The tool enables it automatically if you have SUPER privilege. If not:
+
+**Solution**: Tool enables it automatically with SUPER privilege. Manual enable:
 ```sql
 SET GLOBAL general_log = 'ON';
 SET GLOBAL log_output = 'TABLE';
@@ -317,31 +333,48 @@ SET GLOBAL log_output = 'TABLE';
 
 ### Database Type Mismatch
 **Problem**: "Source and target database types must be the same"
-**Solution**: This tool only supports same-type synchronization. Ensure SOURCE_DB_TYPE and TARGET_DB_TYPE are identical (both `mysql` or both `postgresql`).
+
+**Solution**: Only same-type sync supported. All databases must be either MySQL or PostgreSQL.
 
 ### Connection Errors
-**Problem**: Cannot connect to source/target database
 **Solutions**:
 - Verify credentials in Settings
-- Check network connectivity
-- Ensure databases are accessible from container
-- Use `Test Connection` button in Web UI
+- Check network connectivity between container and databases
+- Ensure user has required permissions
+- Use **Test Connection** button
+- Check firewall rules
+
+### Slave Not Syncing
+**Solutions**:
+- Verify slave is added in Settings and saved
+- Check slave connection status on Home page
+- Review logs for specific error messages
+- Ensure Reset Database permissions if enabled
+
+### Schedule Not Running
+**Solutions**:
+- Verify schedule is enabled (toggle switch on)
+- Check cron expression is valid
+- Ensure at least one slave database is configured
+- Review logs during scheduled time
+- Check system time is correct
 
 ### Chart Shows No Data
-**Problem**: Operations occur but chart is empty
-**Solution**: The tool saves statistics to SQLite. Make sure:
-- Real-time sync is running
-- Operations are being made in source database
-- Wait 2-4 seconds for first detection
-- Check Logs tab for operation confirmations
+**Solutions**:
+- Start real-time sync (not available for PostgreSQL)
+- Make changes in source database
+- Wait 2-4 seconds for detection
+- Check Statistics tab for operation counts
+- Verify general_log is enabled (MySQL)
 
 ## 📚 API Endpoints
 
 ### Authentication
-- `POST /api/login` - User login
-- `POST /api/logout` - User logout
-- `GET /api/check-auth` - Check authentication status
-- `POST /api/setup-first-user` - Create first user
+- `GET /api/auth/check` - Check if authenticated
+- `GET /api/auth/has-users` - Check if users exist
+- `POST /api/auth/setup` - Create first user
+- `POST /api/auth/login` - User login
+- `POST /api/auth/logout` - User logout
 
 ### Configuration
 - `GET /api/config` - Get current configuration
@@ -351,80 +384,170 @@ SET GLOBAL log_output = 'TABLE';
 ### Sync Control
 - `POST /api/sync/start` - Start synchronization
 - `POST /api/sync/stop` - Stop synchronization
-- `GET /api/status` - Get sync status
+- `GET /api/status` - Get current sync status
 
 ### Monitoring
 - `GET /api/stats` - Get sync statistics
 - `GET /api/logs` - Get operation logs
 - `GET /api/chart-stats` - Get hourly chart data
 
+### Scheduling
+- `GET /api/schedules` - Get all schedules
+- `GET /api/schedules/active` - Get active schedules only
+- `POST /api/schedules` - Create new schedule
+- `POST /api/schedules/:id` - Update schedule
+- `DELETE /api/schedules/:id` - Delete schedule
+- `POST /api/schedules/:id/toggle` - Enable/disable schedule
+
 ### User Management
-- `GET /api/profile` - Get user profile
-- `POST /api/update-email` - Update user email
-- `POST /api/update-password` - Change password
+- `GET /api/profile/me` - Get user profile
+- `POST /api/profile/update-email` - Update email
+- `POST /api/profile/update-password` - Change password
 
 ## 🏗️ Architecture
 
 ### Technology Stack
-- **Backend**: Rust (Tokio async runtime)
-- **Web Framework**: Axum
-- **Database Drivers**: sqlx (MySQL, PostgreSQL, SQLite)
-- **Frontend**: Vanilla JavaScript, Chart.js
-- **Storage**: SQLite for config and stats
+- **Backend**: Rust with Tokio async runtime
+- **Web Framework**: Axum 0.7
+- **Database Drivers**: sqlx 0.7 (MySQL, PostgreSQL, SQLite)
+- **Scheduler**: tokio-cron-scheduler
+- **Frontend**: Vanilla JavaScript, Chart.js, Tailwind CSS
+- **Icons**: Iconify
+- **Storage**: SQLite for config, stats, and schedules
 
 ### Components
-1. **Schema Readers**: Read schema from MySQL or PostgreSQL
-2. **Table Creator**: Generates DDL for target database
-3. **Data Migrator**: Bulk transfers with batching
-4. **Binlog Reader** (MySQL): Monitors MySQL general_log for changes
-5. **Database Writers**: Applies operations to MySQL or PostgreSQL
-6. **Stats Logger**: Tracks operations in SQLite
-7. **Web Server**: Axum HTTP server with authentication
+1. **Schema Readers**: Extract schema from MySQL or PostgreSQL
+2. **Data Migrators**: Use `mysqldump` or `pg_dump` for reliable transfers
+3. **Binlog Reader** (MySQL): Monitors general_log for real-time changes
+4. **Database Writers**: Apply operations to multiple slaves in parallel
+5. **Stats Logger**: Track operations in SQLite with hourly aggregation
+6. **Scheduler Service**: Cron-based task scheduler with job management
+7. **Web Server**: Axum HTTP server with middleware authentication
+8. **Configuration Store**: SQLite-backed persistent configuration
 
 ### Data Flow
 ```
-Source DB → Schema Reader → Table Creator → Target DB
-  ↓                                         ↑
-General Log → Binlog Reader → Event Queue → Writer
-                     ↓
-              Stats Logger → SQLite → Chart API → Web UI
+Master DB → Schema Reader → mysqldump/pg_dump → Slaves (Parallel)
+    ↓                                              ↑
+General Log → Binlog Reader → Event Queue → Writers (Parallel)
+                    ↓
+            Stats Logger → SQLite → Web API → Dashboard
+                                      ↓
+                            Scheduler → Automated Syncs
 ```
+
+### Parallel Processing
+- Multiple slave syncs run concurrently using `tokio::spawn`
+- Each slave gets independent sync task
+- Results aggregated for unified reporting
+- Errors isolated per slave (one failure doesn't stop others)
 
 ## 🤝 Contributing
 
 Contributions are welcome! Please:
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-MIT License
+MIT License - See LICENSE file for details
 
 ## 🙋 Support
 
 For issues, questions, or feature requests:
 - Open an issue on GitHub
-- Check logs at `/api/logs` for debugging
+- Check logs at `/api/logs` endpoint
 - Enable `RUST_LOG=debug` for detailed logging
+- Review Troubleshooting section above
 
 ## 🎉 Acknowledgments
 
 Built with:
-- Rust and Tokio
-- Axum web framework
-- sqlx database toolkit
-- Chart.js for visualizations
+- **Rust** - Systems programming language
+- **Tokio** - Async runtime
+- **Axum** - Web framework
+- **sqlx** - Database toolkit
+- **Chart.js** - Data visualization
+- **Tailwind CSS** - Styling framework
+- **tokio-cron-scheduler** - Task scheduling
+
+## 💡 Use Cases
+
+### Development
+- **Database Cloning**: Quickly clone production to staging
+- **Test Data**: Keep test databases in sync with development
+- **Team Collaboration**: Share database state across team members
+
+### Production
+- **Read Replicas**: Create read-only replicas for load distribution
+- **Backup**: Scheduled backups to separate servers
+- **Disaster Recovery**: Maintain hot standby databases
+- **Multi-Region**: Sync databases across geographical regions
+
+### Analytics
+- **Reporting Databases**: Separate analytics workload from production
+- **Data Warehousing**: Feed data to warehouse systems
+- **Business Intelligence**: Real-time data for BI tools
 
 ---
 
-**Version**: 1.0.0  
+**Version**: 2.0.0  
 **Last Updated**: December 2025
 
 ## ⚠️ Important Notes
 
-- **Same-Type Only**: This tool only supports synchronization between databases of the same type (MySQL→MySQL or PostgreSQL→PostgreSQL)
-- **Real-time Sync**: Currently only available for MySQL using general_log monitoring
-- **Performance**: For large databases, consider using initial sync during off-peak hours
-- **Testing**: Always test in a development environment before production use
+- **Same-Type Only**: Synchronization only between identical database types (MySQL→MySQL or PostgreSQL→PostgreSQL)
+- **Real-time Limitations**: Real-time sync only available for MySQL via general_log
+- **PostgreSQL**: Supports initial sync only (no real-time monitoring)
+- **Reset Mode**: USE WITH CAUTION - Drops and recreates slave databases (all data lost)
+- **Scheduled Syncs**: Always use reset mode for data consistency
+- **Performance**: Large databases may take time for initial sync
+- **Testing**: Always test in development before production deployment
+- **Permissions**: Ensure database users have all required privileges
+- **Network**: Verify connectivity between sync server and all databases
+- **Monitoring**: Review logs regularly for errors or warnings
+
+## 🚧 Limitations
+
+1. **Cross-Database Sync**: MySQL ↔ PostgreSQL not supported
+2. **DDL Changes**: Schema changes during real-time sync may cause issues
+3. **PostgreSQL Real-time**: Not implemented (architecture limitation)
+4. **Binary Data**: Large binary objects may slow sync performance
+5. **Conflict Resolution**: Last-write-wins strategy (no conflict detection)
+
+## 🔮 Future Enhancements
+
+- WAL-based PostgreSQL real-time sync
+- Cross-database type synchronization (MySQL ↔ PostgreSQL)
+- Bidirectional sync support
+- Conflict detection and resolution
+- Custom transformation rules
+- Webhook notifications
+- Prometheus metrics export
+- CLI improvements
+- Web UI enhancements
+
+## 📝 Changelog
+
+### Version 2.0.0 (December 2025)
+- ✨ Added multi-slave parallel synchronization
+- ✨ Implemented automated scheduling with cron
+- ✨ Added reset database mode for fresh syncs
+- ✨ Enhanced UI with responsive design
+- ✨ Added active schedules display on home page
+- 🔧 Improved error handling and reporting
+- 🔧 Optimized data transfer with mysqldump/pg_dump
+- 🗑️ Removed Gemini AI integration
+- 🗑️ Removed PostgreSQL real-time sync (not production-ready)
+- 🐛 Fixed cron expression parsing (6-field format)
+- 🐛 Fixed schedule list refresh issues
+- 📚 Updated documentation
+
+### Version 1.0.0 (Initial Release)
+- Basic MySQL and PostgreSQL sync
+- Web UI with authentication
+- Real-time monitoring (MySQL)
+- Statistics and charts

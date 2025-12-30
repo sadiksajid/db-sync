@@ -54,8 +54,6 @@ impl ConfigStore {
                 batch_size INTEGER NOT NULL DEFAULT 100,
                 poll_interval_secs INTEGER NOT NULL DEFAULT 10,
                 sync_mode TEXT NOT NULL DEFAULT 'full-sync',
-                gemini_api_key TEXT,
-                gemini_model TEXT NOT NULL DEFAULT 'gemini-2.0-flash-exp',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -204,8 +202,8 @@ impl ConfigStore {
             INSERT INTO config (
                 id, db_type, db_host, db_port, db_database, db_username, db_password,
                 psql_db_host, psql_db_port, psql_db_database, psql_db_username, psql_db_password,
-                batch_size, poll_interval_secs, sync_mode, reset_database, gemini_api_key, gemini_model, updated_at
-            ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, CURRENT_TIMESTAMP)
+                batch_size, poll_interval_secs, sync_mode, reset_database, updated_at
+            ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 db_type = ?1,
                 db_host = ?2,
@@ -222,8 +220,6 @@ impl ConfigStore {
                 poll_interval_secs = ?13,
                 sync_mode = ?14,
                 reset_database = ?15,
-                gemini_api_key = ?16,
-                gemini_model = ?17,
                 updated_at = CURRENT_TIMESTAMP
             "#,
         )
@@ -242,8 +238,6 @@ impl ConfigStore {
         .bind(config.poll_interval_secs as i64)
         .bind(&config.sync_mode)
         .bind(config.reset_database as i64)  // Boolean as integer (0 or 1)
-        .bind(&config.gemini_api_key)
-        .bind(&config.gemini_model)
         .execute(&self.pool)
         .await?;
 
@@ -342,8 +336,7 @@ impl ConfigStore {
                 db_type, db_host, db_port, db_database, db_username, db_password,
                 psql_db_host, psql_db_port, psql_db_database, psql_db_username, psql_db_password,
                 batch_size, poll_interval_secs, sync_mode, 
-                COALESCE(reset_database, 0) as reset_database, 
-                gemini_api_key, gemini_model
+                COALESCE(reset_database, 0) as reset_database
             FROM config
             WHERE id = 1
             "#,
@@ -407,8 +400,6 @@ impl ConfigStore {
                     poll_interval_secs: row.poll_interval_secs as u64,
                     sync_mode: row.sync_mode,
                     reset_database: row.reset_database != 0,  // Convert i64 to bool
-                    gemini_api_key: row.gemini_api_key,
-                    gemini_model: row.gemini_model,
                     slaves,
                 }))
             }
@@ -751,8 +742,6 @@ struct ConfigRow {
     poll_interval_secs: i64,
     sync_mode: String,
     reset_database: i64,  // Boolean stored as integer (0 or 1)
-    gemini_api_key: Option<String>,
-    gemini_model: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

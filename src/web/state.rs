@@ -85,12 +85,6 @@ pub struct SyncConfig {
     pub sync_mode: String,
     #[serde(default)]
     pub reset_database: bool,  // Drop and recreate databases before sync
-    
-    // Gemini API Configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gemini_api_key: Option<String>,
-    #[serde(default = "default_gemini_model")]
-    pub gemini_model: String,
 }
 
 fn default_db_type() -> String {
@@ -111,10 +105,6 @@ fn default_poll_interval() -> u64 {
 
 fn default_sync_mode() -> String {
     "full-sync".to_string()
-}
-
-fn default_gemini_model() -> String {
-    "gemini-2.0-flash-exp".to_string()
 }
 
 impl Default for SyncConfig {
@@ -146,8 +136,6 @@ impl Default for SyncConfig {
             poll_interval_secs: 10,
             sync_mode: "full-sync".to_string(),
             reset_database: false,
-            gemini_api_key: None,
-            gemini_model: "gemini-2.0-flash-exp".to_string(),
             slaves: Vec::new(),
         }
     }
@@ -417,17 +405,33 @@ impl Default for SyncStats {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
     pub config: Arc<RwLock<SyncConfig>>,
     pub status: Arc<RwLock<SyncStatus>>,
     pub stats: Arc<RwLock<SyncStats>>,
     pub logs: Arc<Mutex<Vec<String>>>,
     pub config_store: Arc<super::ConfigStore>,
+    pub schedule_store: Arc<super::ScheduleStore>,
+    pub scheduler: Option<Arc<super::SchedulerService>>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("config", &"RwLock<SyncConfig>")
+            .field("status", &"RwLock<SyncStatus>")
+            .field("stats", &"RwLock<SyncStats>")
+            .field("logs", &"Mutex<Vec<String>>")
+            .field("config_store", &"Arc<ConfigStore>")
+            .field("schedule_store", &"Arc<ScheduleStore>")
+            .field("scheduler", &self.scheduler.is_some())
+            .finish()
+    }
 }
 
 impl AppState {
-    pub async fn new(config_store: Arc<super::ConfigStore>) -> Self {
+    pub async fn new(config_store: Arc<super::ConfigStore>, schedule_store: Arc<super::ScheduleStore>) -> Self {
         // Try to load saved configuration
         let saved_config = match config_store.load_config().await {
             Ok(Some(cfg)) => {
@@ -450,6 +454,8 @@ impl AppState {
             stats: Arc::new(RwLock::new(SyncStats::default())),
             logs: Arc::new(Mutex::new(Vec::new())),
             config_store,
+            schedule_store,
+            scheduler: None, // Will be set later
         }
     }
 

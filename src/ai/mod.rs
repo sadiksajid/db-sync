@@ -1,2 +1,2 @@
-pub mod gemini_converter;
-
+// AI module - currently empty
+// Can be used for future AI integrations

@@ -4,8 +4,12 @@ pub mod auth;
 pub mod config_store;
 pub mod server;
 pub mod state;
+pub mod schedule_store;
+pub mod scheduler;
 
 pub use config_store::ConfigStore;
+pub use schedule_store::ScheduleStore;
+pub use scheduler::SchedulerService;
 pub use server::start_web_server;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

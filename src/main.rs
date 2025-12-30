@@ -76,7 +76,49 @@ async fn main() -> Result<()> {
             }
         };
         
-        let state = web::state::AppState::new(config_store).await;
+        // Initialize schedule store
+        let schedule_store = match web::ScheduleStore::new("data/config.db").await {
+            Ok(store) => {
+                println!("✅ Schedule storage ready");
+                let _ = std::io::stdout().flush();
+                std::sync::Arc::new(store)
+            }
+            Err(e) => {
+                println!("❌ Failed to initialize schedule storage: {}", e);
+                let _ = std::io::stdout().flush();
+                return Err(e);
+            }
+        };
+        
+        let mut state = web::state::AppState::new(config_store, schedule_store.clone()).await;
+        
+        // Initialize scheduler
+        let scheduler = match web::SchedulerService::new(schedule_store.clone(), state.clone()).await {
+            Ok(sched) => {
+                println!("✅ Scheduler initialized");
+                let _ = std::io::stdout().flush();
+                
+                // Start the scheduler
+                if let Err(e) = sched.start().await {
+                    println!("⚠️  Warning: Failed to start scheduler: {}", e);
+                    let _ = std::io::stdout().flush();
+                    None
+                } else {
+                    println!("✅ Scheduler started");
+                    let _ = std::io::stdout().flush();
+                    Some(std::sync::Arc::new(sched))
+                }
+            }
+            Err(e) => {
+                println!("⚠️  Warning: Failed to initialize scheduler: {}", e);
+                let _ = std::io::stdout().flush();
+                None
+            }
+        };
+        
+        // Set scheduler in state
+        state.scheduler = scheduler;
+        
         println!("📊 Initializing web server on port 5009...");
         let _ = std::io::stdout().flush();
         return match web::start_web_server(state).await {
@@ -741,48 +783,117 @@ async fn run_initial_sync_with_ui(config: &Config, state: web::state::AppState) 
     if should_reset {
         state.add_log("🗑️  RESET DATABASE MODE: Dropping and recreating target database...".to_string()).await;
         
-        // Connect to MySQL server (without database name)
-        let server_url = format!("mysql://{}:{}@{}:{}/",
-            config.target_username,
-            config.target_password,
-            config.target_host,
-            config.target_port
-        );
-        
-        match sqlx::MySqlPool::connect(&server_url).await {
-            Ok(server_pool) => {
-                // Drop database
-                let drop_query = format!("DROP DATABASE IF EXISTS `{}`", config.target_database);
-                match sqlx::query(&drop_query).execute(&server_pool).await {
-                    Ok(_) => {
-                        state.add_log(format!("  ✓ Dropped database '{}'", config.target_database)).await;
+        // Reset database based on target type
+        match &config.target_type {
+            DatabaseType::MySQL => {
+                // Connect to MySQL server (without database name)
+                let server_url = format!("mysql://{}:{}@{}:{}/",
+                    config.target_username,
+                    config.target_password,
+                    config.target_host,
+                    config.target_port
+                );
+                
+                match sqlx::MySqlPool::connect(&server_url).await {
+                    Ok(server_pool) => {
+                        // Drop database
+                        let drop_query = format!("DROP DATABASE IF EXISTS `{}`", config.target_database);
+                        match sqlx::query(&drop_query).execute(&server_pool).await {
+                            Ok(_) => {
+                                state.add_log(format!("  ✓ Dropped database '{}'", config.target_database)).await;
+                            }
+                            Err(e) => {
+                                state.add_log(format!("  ⚠️  Failed to drop database: {}", e)).await;
+                            }
+                        }
+                        
+                        // Create database
+                        let create_query = format!("CREATE DATABASE `{}`", config.target_database);
+                        match sqlx::query(&create_query).execute(&server_pool).await {
+                            Ok(_) => {
+                                state.add_log(format!("  ✓ Created fresh database '{}'", config.target_database)).await;
+                            }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!("Failed to create database: {}", e));
+                            }
+                        }
                     }
                     Err(e) => {
-                        state.add_log(format!("  ⚠️  Failed to drop database: {}", e)).await;
+                        state.add_log(format!("⚠️  Warning: Could not connect to MySQL server for reset: {}", e)).await;
                     }
                 }
-                
-                // Create database
-                let create_query = format!("CREATE DATABASE `{}`", config.target_database);
-                match sqlx::query(&create_query).execute(&server_pool).await {
-                    Ok(_) => {
-                        state.add_log(format!("  ✓ Created fresh database '{}'", config.target_database)).await;
-                    }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!("Failed to create database: {}", e));
-                    }
-                }
-                
-                server_pool.close().await;
             }
-            Err(e) => {
-                state.add_log(format!("  ⚠️  Warning: Could not connect to MySQL server for reset: {}", e)).await;
+            DatabaseType::PostgreSQL => {
+                // Connect to PostgreSQL server (postgres database)
+                let server_url = format!("postgres://{}:{}@{}:{}/postgres",
+                    config.target_username,
+                    config.target_password,
+                    config.target_host,
+                    config.target_port
+                );
+                
+                match sqlx::PgPool::connect(&server_url).await {
+                    Ok(server_pool) => {
+                        // Drop database (need to terminate existing connections first)
+                        let terminate_query = format!(
+                            "SELECT pg_terminate_backend(pg_stat_activity.pid) \
+                            FROM pg_stat_activity \
+                            WHERE pg_stat_activity.datname = '{}' \
+                            AND pid <> pg_backend_pid()",
+                            config.target_database
+                        );
+                        let _ = sqlx::query(&terminate_query).execute(&server_pool).await;
+                        
+                        let drop_query = format!("DROP DATABASE IF EXISTS \"{}\"", config.target_database);
+                        match sqlx::query(&drop_query).execute(&server_pool).await {
+                            Ok(_) => {
+                                state.add_log(format!("  ✓ Dropped database '{}'", config.target_database)).await;
+                            }
+                            Err(e) => {
+                                state.add_log(format!("  ⚠️  Failed to drop database: {}", e)).await;
+                            }
+                        }
+                        
+                        // Create database
+                        let create_query = format!("CREATE DATABASE \"{}\"", config.target_database);
+                        match sqlx::query(&create_query).execute(&server_pool).await {
+                            Ok(_) => {
+                                state.add_log(format!("  ✓ Created fresh database '{}'", config.target_database)).await;
+                            }
+                            Err(e) => {
+                                return Err(anyhow::anyhow!("Failed to create database: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.add_log(format!("⚠️  Warning: Could not connect to PostgreSQL server for reset: {}", e)).await;
+                    }
+                }
             }
         }
+        
+        // Wait a moment for the database to be ready
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
     
     state.add_log("📊 Connecting to databases...".to_string()).await;
     
+    // Check database type and route to appropriate sync function
+    match (&config.source_type, &config.target_type) {
+        (DatabaseType::MySQL, DatabaseType::MySQL) => {
+            return run_initial_sync_mysql_to_mysql(config, state.clone()).await;
+        }
+        (DatabaseType::PostgreSQL, DatabaseType::PostgreSQL) => {
+            return run_initial_sync_pg_to_pg(config, state.clone()).await;
+        }
+        _ => {
+            return Err(anyhow::anyhow!("Cross-database sync (MySQL ↔ PostgreSQL) is not yet supported. Please use the same database type for source and target."));
+        }
+    }
+}
+
+/// MySQL to MySQL initial sync
+async fn run_initial_sync_mysql_to_mysql(config: &Config, state: web::state::AppState) -> Result<String> {
     // Connect to source
     state.add_log(format!("  → Source: {}@{}:{}/{}", 
         config.source_username,
@@ -1029,12 +1140,244 @@ async fn run_initial_sync_with_ui(config: &Config, state: web::state::AppState) 
     Ok(start_timestamp)
 }
 
+/// PostgreSQL to PostgreSQL initial sync
+async fn run_initial_sync_pg_to_pg(config: &Config, state: web::state::AppState) -> Result<String> {
+    // Connect to source
+    state.add_log(format!("  → Source: {}@{}:{}/{}", 
+        config.source_username,
+        config.source_host,
+        config.source_port,
+        config.source_database
+    )).await;
+    let source_pool = sqlx::PgPool::connect(&config.source_url).await?;
+    
+    // Get start timestamp BEFORE data transfer
+    state.add_log("🕐 Recording start timestamp...".to_string()).await;
+    let start_timestamp = get_pg_timestamp(&source_pool).await?;
+    state.add_log(format!("  → Start time: {}", start_timestamp)).await;
+    
+    // Connect to target
+    state.add_log(format!("  → Target: {}@{}:{}/{}", 
+        config.target_username,
+        config.target_host,
+        config.target_port,
+        config.target_database
+    )).await;
+    let target_pool = sqlx::PgPool::connect(&config.target_url).await?;
+    
+    state.add_log("✓ Database connections established".to_string()).await;
+    
+    // Count tables in source
+    state.add_log("📖 Reading source schema...".to_string()).await;
+    let table_count_result: Result<(i64,), _> = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+    )
+    .fetch_one(&source_pool)
+    .await;
+    
+    let table_count = table_count_result.map(|r| r.0).unwrap_or(0);
+    state.add_log(format!("  → Found {} tables", table_count)).await;
+    
+    // Update stats
+    {
+        let mut stats = state.stats.write().await;
+        stats.tables_synced = table_count as usize;
+    }
+    
+    // Export schema using pg_dump
+    state.add_log("🔨 Exporting schema using pg_dump...".to_string()).await;
+    
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+    
+    // Set PGPASSWORD environment variable for pg_dump
+    let dump_result = Command::new("pg_dump")
+        .env("PGPASSWORD", &config.source_password)
+        .args([
+            "-h", &config.source_host,
+            "-p", &config.source_port.to_string(),
+            "-U", &config.source_username,
+            "-d", &config.source_database,
+            "--schema-only",           // Schema only
+            "--no-owner",              // Don't output ownership commands
+            "--no-acl",                // Don't output ACL commands
+        ])
+        .output();
+    
+    match dump_result {
+        Ok(output) if output.status.success() => {
+            let schema_sql = String::from_utf8_lossy(&output.stdout);
+            state.add_log(format!("✓ Exported {} bytes of schema", schema_sql.len())).await;
+            
+            // Import schema to target using psql
+            state.add_log("🔨 Importing schema to target database...".to_string()).await;
+            
+            let mut import_child = match Command::new("psql")
+                .env("PGPASSWORD", &config.target_password)
+                .args([
+                    "-h", &config.target_host,
+                    "-p", &config.target_port.to_string(),
+                    "-U", &config.target_username,
+                    "-d", &config.target_database,
+                    "--quiet",  // Suppress non-error messages
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to start psql import: {}", e));
+                }
+            };
+            
+            // Write schema to psql stdin
+            if let Some(mut stdin) = import_child.stdin.take() {
+                if let Err(e) = stdin.write_all(schema_sql.as_bytes()) {
+                    return Err(anyhow::anyhow!("Failed to write schema to psql: {}", e));
+                }
+            }
+            
+            // Wait for import to complete
+            match import_child.wait() {
+                Ok(status) if status.success() => {
+                    state.add_log(format!("✓ Created {} tables using pg_dump", table_count)).await;
+                }
+                Ok(status) => {
+                    let stderr = import_child.stderr.and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok()?;
+                        Some(buf)
+                    }).unwrap_or_default();
+                    
+                    if !stderr.is_empty() {
+                        state.add_log(format!("⚠️  Schema import warnings: {}", 
+                            stderr.lines().take(5).collect::<Vec<_>>().join("; "))).await;
+                    }
+                    
+                    state.add_log(format!("✓ Schema import completed")).await;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Schema import process failed: {}", e));
+                }
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("pg_dump schema export failed: {}", stderr));
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to execute pg_dump for schema: {}", e));
+        }
+    }
+    
+    // Transfer data using pg_dump
+    state.add_log("📦 Transferring data using pg_dump...".to_string()).await;
+    
+    let data_dump_result = Command::new("pg_dump")
+        .env("PGPASSWORD", &config.source_password)
+        .args([
+            "-h", &config.source_host,
+            "-p", &config.source_port.to_string(),
+            "-U", &config.source_username,
+            "-d", &config.source_database,
+            "--data-only",             // Data only
+            "--no-owner",              // Don't output ownership commands
+            "--no-acl",                // Don't output ACL commands
+            "--disable-triggers",      // Disable triggers during import
+            "--inserts",               // Use INSERT commands (required for --on-conflict-do-nothing)
+            "--rows-per-insert=1000",  // Batch inserts for better performance
+            "--on-conflict-do-nothing", // Skip conflicts (like MySQL's INSERT IGNORE)
+        ])
+        .output();
+    
+    match data_dump_result {
+        Ok(output) if output.status.success() => {
+            let data_sql = String::from_utf8_lossy(&output.stdout);
+            state.add_log(format!("✓ Exported {} bytes of data", data_sql.len())).await;
+            
+            // Import data to target
+            state.add_log("📥 Importing data to target database...".to_string()).await;
+            
+            let mut data_import_child = match Command::new("psql")
+                .env("PGPASSWORD", &config.target_password)
+                .args([
+                    "-h", &config.target_host,
+                    "-p", &config.target_port.to_string(),
+                    "-U", &config.target_username,
+                    "-d", &config.target_database,
+                    "--quiet",
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to start psql data import: {}", e));
+                }
+            };
+            
+            if let Some(mut stdin) = data_import_child.stdin.take() {
+                if let Err(e) = stdin.write_all(data_sql.as_bytes()) {
+                    return Err(anyhow::anyhow!("Failed to write data to psql: {}", e));
+                }
+            }
+            
+            match data_import_child.wait() {
+                Ok(status) if status.success() => {
+                    state.add_log("✓ Data transfer completed successfully".to_string()).await;
+                }
+                Ok(_status) => {
+                    let stderr = data_import_child.stderr.and_then(|mut s| {
+                        let mut buf = String::new();
+                        std::io::Read::read_to_string(&mut s, &mut buf).ok()?;
+                        Some(buf)
+                    }).unwrap_or_default();
+                    
+                    if !stderr.is_empty() {
+                        state.add_log(format!("⚠️  Data import warnings: {}", 
+                            stderr.lines().take(3).collect::<Vec<_>>().join("; "))).await;
+                    }
+                    
+                    state.add_log("✓ Data import completed with warnings".to_string()).await;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Data import failed: {}", e));
+                }
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("pg_dump data export failed: {}", stderr));
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to execute pg_dump for data: {}", e));
+        }
+    }
+    
+    state.add_log("✓ Initial sync completed successfully".to_string()).await;
+    
+    Ok(start_timestamp)
+}
+
 /// Run full sync for UI mode - combines initial, catchup, and realtime sync
 /// Accepts config directly from web UI (no environment variables!)
 pub async fn run_full_sync_for_ui(config: Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
     
     state.add_log("Starting full synchronization...".to_string()).await;
+    
+    // Check if PostgreSQL - full sync (with realtime) not supported yet
+    if config.source_type == DatabaseType::PostgreSQL {
+        state.add_log("⚠️  Full sync mode includes real-time replication which is not yet supported for PostgreSQL".to_string()).await;
+        state.add_log("ℹ️  Switching to 'Initial Sync Only' mode for PostgreSQL".to_string()).await;
+        state.add_log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string()).await;
+        // Fall through to just run initial sync
+        return run_initial_only_for_ui(config, state).await;
+    }
     
     // Phase 1: Initial Sync with detailed logging
     state.add_log("=== Phase 1/3: Initial Sync ===".to_string()).await;
@@ -1144,6 +1487,14 @@ pub async fn run_realtime_only_for_ui(config: Config, state: web::state::AppStat
 async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) -> Result<()> {
     use chrono::Utc;
     
+    // PostgreSQL real-time sync is not supported
+    if config.source_type == DatabaseType::PostgreSQL {
+        state.add_log("❌ Real-time sync is not supported for PostgreSQL".to_string()).await;
+        state.add_log("ℹ️  Please use 'Initial Sync Only' mode for PostgreSQL databases".to_string()).await;
+        return Err(anyhow::anyhow!("Real-time sync not supported for PostgreSQL"));
+    }
+    
+    // MySQL binlog-based sync
     state.add_log("Connecting to source...".to_string()).await;
     let source_pool = sqlx::mysql::MySqlPool::connect(&config.source_url).await?;
     
@@ -1298,4 +1649,5 @@ async fn run_realtime_sync_for_ui(config: &Config, state: web::state::AppState) 
     state.add_log("✓ Real-time sync stopped".to_string()).await;
     Ok(())
 }
+
 

@@ -27,6 +27,10 @@ pub async fn start_web_server(state: AppState) -> anyhow::Result<()> {
         .route("/api/profile/me", get(get_profile))
         .route("/api/profile/update-email", post(update_email))
         .route("/api/profile/update-password", post(update_password))
+        .route("/api/schedules", get(get_schedules).post(create_schedule))
+        .route("/api/schedules/active", get(get_active_schedules))
+        .route("/api/schedules/:id", post(update_schedule).delete(delete_schedule))
+        .route("/api/schedules/:id/toggle", post(toggle_schedule))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -576,6 +580,9 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
     state.add_log(format!("📋 Selected sync mode: {}", sync_mode)).await;
     state.add_log(format!("🚀 Starting PARALLEL sync to {} slave(s)...", slave_configs.len())).await;
     
+    // Clone slave_configs for later use
+    let slave_configs_clone = slave_configs.clone();
+    
     // Run sync to ALL slaves in PARALLEL using tokio::spawn
     let mut handles = vec![];
     
@@ -643,44 +650,47 @@ async fn run_sync_task(state: AppState) -> anyhow::Result<()> {
     }
     
     // Wait for ALL slaves to complete
-    state.add_log("⏳ Waiting for all slave syncs to complete...".to_string()).await;
-    
-    let mut success_count = 0;
-    let mut error_count = 0;
-    let mut errors = Vec::new();
-    
-    for (idx, handle) in handles.into_iter().enumerate() {
-        match handle.await {
-            Ok(Ok(_)) => {
-                success_count += 1;
-            }
-            Ok(Err(e)) => {
-                error_count += 1;
-                errors.push(format!("Slave #{}: {}", idx + 1, e));
-            }
-            Err(e) => {
-                error_count += 1;
-                errors.push(format!("Slave #{}: Task panicked: {}", idx + 1, e));
+    {
+        // Standard parallel sync
+        state.add_log("⏳ Waiting for all slave syncs to complete...".to_string()).await;
+        
+        let mut success_count = 0;
+        let mut error_count = 0;
+        let mut errors = Vec::new();
+        
+        for (idx, handle) in handles.into_iter().enumerate() {
+            match handle.await {
+                Ok(Ok(_)) => {
+                    success_count += 1;
+                }
+                Ok(Err(e)) => {
+                    error_count += 1;
+                    errors.push(format!("Slave #{}: {}", idx + 1, e));
+                }
+                Err(e) => {
+                    error_count += 1;
+                    errors.push(format!("Slave #{}: Task panicked: {}", idx + 1, e));
+                }
             }
         }
-    }
-    
-    // Report final status
-    state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
-    state.add_log(format!("📊 PARALLEL SYNC RESULTS:")).await;
-    state.add_log(format!("  ✅ Successful: {}", success_count)).await;
-    state.add_log(format!("  ❌ Failed: {}", error_count)).await;
-    state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
-    
-    if error_count == 0 {
-        state.add_log("🎉 All slave databases synchronized successfully!".to_string()).await;
-        *state.status.write().await = SyncStatus::Idle;
-        Ok(())
-    } else {
-        let error_summary = errors.join("; ");
-        state.add_log(format!("⚠️  Some syncs failed: {}", error_summary)).await;
-        *state.status.write().await = SyncStatus::Error(error_summary.clone());
-        Err(anyhow::anyhow!("Sync failures: {}", error_summary))
+        
+        // Report final status
+        state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
+        state.add_log(format!("📊 PARALLEL SYNC RESULTS:")).await;
+        state.add_log(format!("  ✅ Successful: {}", success_count)).await;
+        state.add_log(format!("  ❌ Failed: {}", error_count)).await;
+        state.add_log(format!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")).await;
+        
+        if error_count == 0 {
+            state.add_log("🎉 All slave databases synchronized successfully!".to_string()).await;
+            *state.status.write().await = SyncStatus::Idle;
+            Ok(())
+        } else {
+            let error_summary = errors.join("; ");
+            state.add_log(format!("⚠️  Some syncs failed: {}", error_summary)).await;
+            *state.status.write().await = SyncStatus::Error(error_summary.clone());
+            Err(anyhow::anyhow!("Sync failures: {}", error_summary))
+        }
     }
 }
 
@@ -1032,6 +1042,159 @@ async fn update_password(
         Err(e) => {
             error!("Password verification error: {}", e);
             Json(ApiResponse::error("Password verification failed"))
+        }
+    }
+}
+
+// ============================================================================
+// SCHEDULE API HANDLERS
+// ============================================================================
+
+use axum::extract::Path;
+use super::schedule_store::{CreateSchedule, Schedule};
+
+// Get all schedules
+async fn get_schedules(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<Schedule>>> {
+    match state.schedule_store.get_all().await {
+        Ok(schedules) => {
+            Json(ApiResponse::success("Schedules retrieved successfully", Some(schedules)))
+        }
+        Err(e) => {
+            error!("Failed to get schedules: {}", e);
+            Json(ApiResponse::error(format!("Failed to get schedules: {}", e)))
+        }
+    }
+}
+
+// Get active schedules only
+async fn get_active_schedules(
+    State(state): State<AppState>,
+) -> Json<ApiResponse<Vec<Schedule>>> {
+    match state.schedule_store.get_enabled().await {
+        Ok(schedules) => {
+            Json(ApiResponse::success("Active schedules retrieved successfully", Some(schedules)))
+        }
+        Err(e) => {
+            error!("Failed to get active schedules: {}", e);
+            Json(ApiResponse::error(format!("Failed to get active schedules: {}", e)))
+        }
+    }
+}
+
+// Create a new schedule
+async fn create_schedule(
+    State(state): State<AppState>,
+    Json(schedule): Json<CreateSchedule>,
+) -> Json<ApiResponse<i64>> {
+    // Validate cron expression
+    match cron::Schedule::try_from(schedule.cron_expression.as_str()) {
+        Ok(_) => {
+            // Cron expression is valid
+            match state.schedule_store.create(schedule).await {
+                Ok(id) => {
+                    // Reload schedules in the scheduler
+                    if let Some(scheduler) = &state.scheduler {
+                        if let Err(e) = scheduler.reload_schedules().await {
+                            error!("Failed to reload schedules: {}", e);
+                        }
+                    }
+                    
+                    Json(ApiResponse::success("Schedule created successfully", Some(id)))
+                }
+                Err(e) => {
+                    error!("Failed to create schedule: {}", e);
+                    Json(ApiResponse::error(format!("Failed to create schedule: {}", e)))
+                }
+            }
+        }
+        Err(e) => {
+            Json(ApiResponse::error(format!("Invalid cron expression: {}", e)))
+        }
+    }
+}
+
+// Update a schedule
+async fn update_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(schedule): Json<CreateSchedule>,
+) -> Json<ApiResponse<()>> {
+    // Validate cron expression
+    match cron::Schedule::try_from(schedule.cron_expression.as_str()) {
+        Ok(_) => {
+            match state.schedule_store.update(id, schedule).await {
+                Ok(_) => {
+                    // Reload schedules in the scheduler
+                    if let Some(scheduler) = &state.scheduler {
+                        if let Err(e) = scheduler.reload_schedules().await {
+                            error!("Failed to reload schedules: {}", e);
+                        }
+                    }
+                    
+                    Json(ApiResponse::success("Schedule updated successfully", None))
+                }
+                Err(e) => {
+                    error!("Failed to update schedule: {}", e);
+                    Json(ApiResponse::error(format!("Failed to update schedule: {}", e)))
+                }
+            }
+        }
+        Err(e) => {
+            Json(ApiResponse::error(format!("Invalid cron expression: {}", e)))
+        }
+    }
+}
+
+// Toggle schedule enabled/disabled
+#[derive(Debug, Deserialize)]
+struct ToggleScheduleRequest {
+    enabled: bool,
+}
+
+async fn toggle_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(req): Json<ToggleScheduleRequest>,
+) -> Json<ApiResponse<()>> {
+    match state.schedule_store.toggle_enabled(id, req.enabled).await {
+        Ok(_) => {
+            // Reload schedules in the scheduler
+            if let Some(scheduler) = &state.scheduler {
+                if let Err(e) = scheduler.reload_schedules().await {
+                    error!("Failed to reload schedules: {}", e);
+                }
+            }
+            
+            Json(ApiResponse::success("Schedule toggled successfully", None))
+        }
+        Err(e) => {
+            error!("Failed to toggle schedule: {}", e);
+            Json(ApiResponse::error(format!("Failed to toggle schedule: {}", e)))
+        }
+    }
+}
+
+// Delete a schedule
+async fn delete_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<()>> {
+    match state.schedule_store.delete(id).await {
+        Ok(_) => {
+            // Reload schedules in the scheduler
+            if let Some(scheduler) = &state.scheduler {
+                if let Err(e) = scheduler.reload_schedules().await {
+                    error!("Failed to reload schedules: {}", e);
+                }
+            }
+            
+            Json(ApiResponse::success("Schedule deleted successfully", None))
+        }
+        Err(e) => {
+            error!("Failed to delete schedule: {}", e);
+            Json(ApiResponse::error(format!("Failed to delete schedule: {}", e)))
         }
     }
 }
