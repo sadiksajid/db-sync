@@ -3,14 +3,13 @@
 **/*.rs.bk
 *.pdb
 
-# Cargo
-Cargo.lock
-
 # Build artifacts
 /debug/
 /release/
 
 # Data and logs
+data/
+db_sync_data/
 mysql_psql_data/
 *.db
 *.db-shm
@@ -23,9 +22,6 @@ mysql_psql_data/
 .env
 .env.local
 .env.*.local
-
-# Docker
-.dockerignore
 
 # IDE
 .vscode/

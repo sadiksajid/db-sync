@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+.github
+
+# Build artifacts
+target/
+*.db
+*.log
+
+# Data directories
+data/
+db_sync_data/
+mysql_psql_data/
+
+# Documentation
+README.md
+FEATURE_SUMMARY.txt
+example_stats_output.txt
+env-variables-example.txt
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Scripts
+rebuild-and-run.sh
+run-web-ui.sh
+
+# Docker files
+docker-compose.yml
+.dockerignore
+

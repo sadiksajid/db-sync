@@ -290,7 +290,50 @@ Each slave shows:
 
 ## 🐳 Docker Deployment
 
-### Docker Compose (Included)
+### Using Pre-built Image from GitHub Container Registry
+
+The easiest way to get started is using the pre-built image from GitHub Container Registry:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/OWNER/REPO:latest
+
+# Run the container
+docker run -d \
+  --name db-sync-proxy \
+  -p 5009:5009 \
+  -v ./db_sync_data:/app/data \
+  -e RUST_LOG=info \
+  ghcr.io/OWNER/REPO:latest --web-ui
+```
+
+**Note**: Replace `OWNER/REPO` with your GitHub username and repository name (e.g., `ghcr.io/yourusername/db-sync:latest`)
+
+### Available Image Tags
+- `latest` - Latest stable release from main/master branch
+- `v*` - Semantic version tags (e.g., `v1.0.0`, `v1.0.1`)
+- `main` or `master` - Latest build from the main branch
+- `sha-XXXXXXX` - Specific commit builds
+
+### Docker Compose with Pre-built Image
+
+```yaml
+version: '3.8'
+
+services:
+  db-sync:
+    image: ghcr.io/OWNER/REPO:latest
+    ports:
+      - "5009:5009"
+    volumes:
+      - ./db_sync_data:/app/data
+    environment:
+      - RUST_LOG=info
+    command: ["--web-ui"]
+    restart: unless-stopped
+```
+
+### Docker Compose (Build from Source)
 
 ```yaml
 version: '3.8'
