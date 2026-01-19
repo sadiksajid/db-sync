@@ -1,8 +1,8 @@
-# 🚀 Quick Deployment Guide - GitHub Container Registry
+# 🚀 Quick Deployment Guide - GHCR & Docker Hub
 
 ## What Was Set Up
 
-Your DB Sync Proxy project is now configured to automatically build and publish Docker images to GitHub Container Registry (ghcr.io) whenever you push code to GitHub.
+Your DB Sync Proxy project is now configured to automatically build and publish Docker images to **both** GitHub Container Registry (ghcr.io) **and Docker Hub** whenever you push code to GitHub.
 
 ### ✅ Files Created/Modified:
 
@@ -15,7 +15,34 @@ Your DB Sync Proxy project is now configured to automatically build and publish 
 
 ## 🎯 Next Steps
 
-### 1. Push to GitHub
+### 1. Setup Docker Hub (Required)
+
+Before pushing to GitHub, you need to configure Docker Hub credentials:
+
+#### A. Create Docker Hub Access Token
+
+1. Go to [hub.docker.com](https://hub.docker.com) and login
+2. Click your username → **Account Settings** → **Security**
+3. Click **New Access Token**
+4. Name: `GitHub Actions`, Permissions: **Read, Write, Delete**
+5. Click **Generate** and **copy the token** (you won't see it again!)
+
+#### B. Add Secrets to GitHub
+
+1. Go to your repository on GitHub
+2. **Settings** → **Secrets and variables** → **Actions**
+3. Click **New repository secret**:
+   - Name: `DOCKERHUB_USERNAME`
+   - Value: `sadiksajid`
+   - Click **Add secret**
+4. Click **New repository secret** again:
+   - Name: `DOCKERHUB_TOKEN`
+   - Value: Paste the access token from step A
+   - Click **Add secret**
+
+**📚 Detailed Guide**: See `DOCKERHUB_SETUP.md` for complete instructions
+
+### 2. Push to GitHub
 
 First, commit and push these changes to your GitHub repository:
 
@@ -53,7 +80,7 @@ git push -u origin main
 
 ### 2. Enable GitHub Actions Permissions
 
-To allow GitHub Actions to push to GHCR:
+To allow GitHub Actions to push to GHCR and create version tags:
 
 1. Go to your GitHub repository
 2. Click **Settings** → **Actions** → **General**
@@ -66,36 +93,51 @@ To allow GitHub Actions to push to GHCR:
 
 1. Go to your repository on GitHub
 2. Click on the **Actions** tab
-3. You should see "Build and Push to GHCR" workflow running
+3. You should see "Build and Push to GHCR & Docker Hub" workflow running
 4. Wait for it to complete (5-15 minutes for first build)
 5. Green checkmark = Success! ✅
 
-### 4. Find Your Image
+### 4. Find Your Images
 
-After the workflow completes:
+After the workflow completes, images are available in **two** places:
 
+#### A. GitHub Container Registry (GHCR)
 1. Go to your repository main page
 2. Look for **Packages** on the right sidebar
 3. Click on your package name
 4. You'll see all available tags
 
-### 5. Make Image Public (Optional)
+#### B. Docker Hub
+1. Go to [hub.docker.com](https://hub.docker.com)
+2. Click on your username
+3. You'll see your repository listed
+4. Click it to see all tags
 
+### 5. Make Images Public (Optional)
+
+#### Make GHCR Image Public
 By default, GHCR images are private. To make public:
-
 1. Click on the package in GitHub
 2. Click **Package settings** (bottom right)
 3. Scroll to **Danger Zone**
 4. Click **Change visibility** → **Public**
 5. Confirm the change
 
-## 🐳 Using Your Image
+#### Make Docker Hub Image Public
+By default, Docker Hub images are public. To make private:
+1. Go to your repository on Docker Hub
+2. Click **Settings** tab
+3. Change visibility to **Private** (requires paid plan)
 
-### Pull and Run
+## 🐳 Using Your Images
+
+You can now pull from **either** registry:
+
+### Option 1: Pull from Docker Hub (Recommended for Public Use)
 
 ```bash
-# Replace YOUR_USERNAME and YOUR_REPO with your GitHub details
-docker pull ghcr.io/YOUR_USERNAME/YOUR_REPO:latest
+# Pull the latest image
+docker pull sadiksajid/db-sync:latest
 
 # Run the container
 docker run -d \
@@ -103,22 +145,55 @@ docker run -d \
   -p 5009:5009 \
   -v ./db_sync_data:/app/data \
   -e RUST_LOG=info \
-  ghcr.io/YOUR_USERNAME/YOUR_REPO:latest --web-ui
+  sadiksajid/db-sync:latest --web-ui
 
 # Access the web UI
 open http://localhost:5009
+```
+
+### Option 2: Pull from GitHub Container Registry
+
+```bash
+# Replace YOUR_GITHUB_USERNAME and YOUR_REPO with your GitHub details
+docker pull ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO:latest
+
+# Run the container
+docker run -d \
+  --name db-sync-proxy \
+  -p 5009:5009 \
+  -v ./db_sync_data:/app/data \
+  -e RUST_LOG=info \
+  ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO:latest --web-ui
 ```
 
 ### Docker Compose
 
 Create or update `docker-compose.yml`:
 
+**Using Docker Hub:**
 ```yaml
 version: '3.8'
 
 services:
   db-sync:
-    image: ghcr.io/YOUR_USERNAME/YOUR_REPO:latest
+    image: sadiksajid/db-sync:latest
+    ports:
+      - "5009:5009"
+    volumes:
+      - ./db_sync_data:/app/data
+    environment:
+      - RUST_LOG=info
+    command: ["--web-ui"]
+    restart: unless-stopped
+```
+
+**Using GHCR:**
+```yaml
+version: '3.8'
+
+services:
+  db-sync:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO:latest
     ports:
       - "5009:5009"
     volumes:
@@ -194,17 +269,39 @@ gh run watch
 3. Click **build-and-push** job
 4. Expand steps to see logs
 
+## 🎯 Which Registry to Use?
+
+### Docker Hub
+✅ **Best for**: Public images, traditional Docker users, wider distribution  
+✅ **Pros**: Well-known, integrated with Docker CLI, large community  
+✅ **Cons**: Rate limits on free tier, requires account setup  
+
+### GitHub Container Registry (GHCR)
+✅ **Best for**: Private repos, GitHub-centric workflows, organization packages  
+✅ **Pros**: Integrated with GitHub, unlimited bandwidth, free for public repos  
+✅ **Cons**: Requires GitHub authentication for private images  
+
+**💡 Tip**: Both registries receive the exact same images with the same tags!
+
 ## 🐛 Common Issues
 
 ### Build Fails - Permission Denied
 
 **Fix**: Enable "Read and write permissions" in Settings → Actions → General
 
+### Docker Hub Login Fails
+
+**Fix**: 
+- Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set correctly
+- Regenerate Docker Hub access token
+- Ensure token has "Read, Write, Delete" permissions
+- Check username is correct (not email)
+
 ### Cannot Pull Image
 
 **Fix**: 
-- Make image public (see step 5 above)
-- Or login: `echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_USERNAME --password-stdin`
+- **GHCR**: Make image public or login: `echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin`
+- **Docker Hub**: Images are public by default, just pull directly
 
 ### Workflow Not Triggered
 
@@ -212,6 +309,13 @@ gh run watch
 - Check you pushed to `main` or `master` branch
 - Verify workflow file is in `.github/workflows/` directory
 - Check Actions are enabled in repository settings
+
+### Only Pushes to One Registry
+
+**Fix**:
+- Check workflow logs to see which step failed
+- For Docker Hub: Verify secrets are set
+- For GHCR: Verify GitHub Actions permissions
 
 ## 📋 Environment-Specific Deployments
 
@@ -261,14 +365,18 @@ docker run -d --name db-sync-proxy -p 5009:5009 \
 
 ✅ **Automated Builds**: Every push triggers a new build  
 ✅ **Multi-Platform**: Supports AMD64 and ARM64 architectures  
-✅ **Version Control**: Track versions with git tags  
-✅ **Fast Deployments**: Pull pre-built images instead of building locally  
+✅ **Auto-Versioning**: Automatic semantic version tags on each push  
+✅ **Dual Registry**: Images available on both GHCR and Docker Hub  
+✅ **Fast Deployments**: Pull pre-built images instead of building locally (saves 10-15 min)  
 ✅ **Rollback Support**: Easily revert to previous versions  
 ✅ **CI/CD Ready**: Integrate with deployment pipelines  
+✅ **Free Hosting**: Both registries free for public repos  
 
 ## 📚 More Information
 
-- **Detailed Setup**: See `GHCR_SETUP.md` for comprehensive guide
+- **Docker Hub Setup**: See `DOCKERHUB_SETUP.md` for Docker Hub configuration
+- **GHCR Setup**: See `GHCR_SETUP.md` for GitHub Container Registry guide
+- **Auto Versioning**: See `VERSIONING.md` for version control details
 - **Usage Instructions**: See `README.md` for application features
 - **Docker Details**: See `Dockerfile` for build process
 

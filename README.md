@@ -290,13 +290,15 @@ Each slave shows:
 
 ## 🐳 Docker Deployment
 
-### Using Pre-built Image from GitHub Container Registry
+### Using Pre-built Images
 
-The easiest way to get started is using the pre-built image from GitHub Container Registry:
+The easiest way to get started is using pre-built images from Docker Hub or GitHub Container Registry:
+
+#### Option 1: Docker Hub (Recommended)
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/OWNER/REPO:latest
+docker pull sadiksajid/db-sync:latest
 
 # Run the container
 docker run -d \
@@ -304,25 +306,58 @@ docker run -d \
   -p 5009:5009 \
   -v ./db_sync_data:/app/data \
   -e RUST_LOG=info \
-  ghcr.io/OWNER/REPO:latest --web-ui
+  sadiksajid/db-sync:latest --web-ui
 ```
 
-**Note**: Replace `OWNER/REPO` with your GitHub username and repository name (e.g., `ghcr.io/yourusername/db-sync:latest`)
+#### Option 2: GitHub Container Registry
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/GITHUB_USERNAME/REPO:latest
+
+# Run the container
+docker run -d \
+  --name db-sync-proxy \
+  -p 5009:5009 \
+  -v ./db_sync_data:/app/data \
+  -e RUST_LOG=info \
+  ghcr.io/GITHUB_USERNAME/REPO:latest --web-ui
+```
+
+**Note**: Images are automatically built and published on every push to master
 
 ### Available Image Tags
-- `latest` - Latest stable release from main/master branch
-- `v*` - Semantic version tags (e.g., `v1.0.0`, `v1.0.1`)
-- `main` or `master` - Latest build from the main branch
-- `sha-XXXXXXX` - Specific commit builds
+- `latest` - Latest stable release from master branch
+- `v*` - Semantic version tags (e.g., `v1.0.0`, `v1.0.1`) - auto-generated
+- `master` - Latest build from the master branch
+- `1`, `1.0`, `1.0.0` - Major, minor, and patch version tags
 
 ### Docker Compose with Pre-built Image
 
+**Using Docker Hub:**
 ```yaml
 version: '3.8'
 
 services:
   db-sync:
-    image: ghcr.io/OWNER/REPO:latest
+    image: sadiksajid/db-sync:latest
+    ports:
+      - "5009:5009"
+    volumes:
+      - ./db_sync_data:/app/data
+    environment:
+      - RUST_LOG=info
+    command: ["--web-ui"]
+    restart: unless-stopped
+```
+
+**Using GHCR:**
+```yaml
+version: '3.8'
+
+services:
+  db-sync:
+    image: ghcr.io/GITHUB_USERNAME/REPO:latest
     ports:
       - "5009:5009"
     volumes:
