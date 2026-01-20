@@ -3,7 +3,7 @@ use axum::{
     extract::{Request, State},
     http::{header, StatusCode},
     middleware,
-    response::{Html, IntoResponse, Json, Response},
+    response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{get, post},
     Extension,
     Router,
@@ -68,13 +68,13 @@ pub async fn start_web_server(state: AppState) -> anyhow::Result<()> {
 async fn serve_index_with_check(
     State(state): State<AppState>,
     req: Request,
-) -> Result<Html<String>, StatusCode> {
+) -> Response {
     // Check if any users exist
     let has_users = state.config_store.has_users().await.unwrap_or(true);
     
     if !has_users {
         // No users exist, allow access to show setup modal
-        return Ok(serve_index().await);
+        return serve_index().await.into_response();
     }
     
     // Users exist, check authentication
@@ -100,17 +100,17 @@ async fn serve_index_with_check(
         match state.config_store.validate_session(&session_id).await {
             Ok(Some(_user_id)) => {
                 // Authenticated, serve the page
-                return Ok(serve_index().await);
+                return serve_index().await.into_response();
             }
             _ => {
                 // Invalid session, redirect to login
-                return Err(StatusCode::UNAUTHORIZED);
+                return Redirect::to("/login").into_response();
             }
         }
     }
     
     // Not authenticated, redirect to login
-    Err(StatusCode::UNAUTHORIZED)
+    Redirect::to("/login").into_response()
 }
 
 async fn serve_index() -> Html<String> {
