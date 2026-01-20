@@ -98,3 +98,43 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
 
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && steps.tag_version.outputs.new_tag != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          body: |
+            ## 🚀 Docker Images Available
+            
+            This release includes multi-platform Docker images (AMD64 and ARM64) available on both registries:
+            
+            ### Docker Hub
+            ```bash
+            docker pull sadiksajid/db-sync:${{ steps.tag_version.outputs.new_tag }}
+            docker pull sadiksajid/db-sync:latest
+            ```
+            
+            ### GitHub Container Registry
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.tag_version.outputs.new_tag }}
+            docker pull ghcr.io/${{ github.repository }}:latest
+            ```
+            
+            ### Quick Start
+            ```bash
+            docker run -d --name db-sync-proxy \
+              -p 5009:5009 \
+              -v ./db_sync_data:/app/data \
+              sadiksajid/db-sync:${{ steps.tag_version.outputs.new_tag }} --web-ui
+            ```
+            
+            Access the web UI at http://localhost:5009
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.tag_version.outputs.tag }}...${{ steps.tag_version.outputs.new_tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+

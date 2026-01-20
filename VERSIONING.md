@@ -8,7 +8,8 @@ When you push code to the `master` branch:
 1. GitHub Actions automatically creates a new version tag
 2. The version follows semantic versioning (MAJOR.MINOR.PATCH)
 3. Docker images are built with the new version tag
-4. Images are pushed to GHCR with multiple tags
+4. Images are pushed to Docker Hub and GHCR with multiple tags
+5. A GitHub Release is automatically created with release notes
 
 ## Default Behavior
 
@@ -121,11 +122,27 @@ git push origin master
 
 ## Viewing Versions
 
-### In GitHub
+### In GitHub Releases
 
 1. Go to your repository
-2. Click **Releases** tab
-3. See all versions with timestamps
+2. Click **Releases** tab (right sidebar or `/releases`)
+3. See all versions with:
+   - Version tag (e.g., v1.0.3)
+   - Release date and time
+   - Docker pull commands
+   - Automatic release notes
+   - Full changelog link
+
+Example Release Display:
+```
+Release v1.0.3
+Latest
+17 hours ago
+
+🚀 Docker Images Available
+- Docker Hub: sadiksajid/db-sync:v1.0.3
+- GHCR: ghcr.io/OWNER/REPO:v1.0.3
+```
 
 ### Using Git
 

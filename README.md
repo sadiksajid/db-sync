@@ -472,13 +472,15 @@ services:
 
 </details>
 
-> **Note**: Images are automatically built and published on every push to master
+> **Note**: Images are automatically built and published on every push to master. Each push creates a GitHub Release with version tag and pull commands.
 
 ### Available Image Tags
 - `latest` - Latest stable release from master branch
 - `v*` - Semantic version tags (e.g., `v1.0.0`, `v1.0.1`) - auto-generated
 - `master` - Latest build from the master branch
 - `1`, `1.0`, `1.0.0` - Major, minor, and patch version tags
+
+> 💡 **Tip**: Check the [Releases](../../releases) page for all available versions with Docker pull commands
 
 ### Docker Compose (Build from Source)
 

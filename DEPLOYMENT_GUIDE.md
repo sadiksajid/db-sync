@@ -97,7 +97,31 @@ To allow GitHub Actions to push to GHCR and create version tags:
 4. Wait for it to complete (5-15 minutes for first build)
 5. Green checkmark = Success! ✅
 
-### 4. Find Your Images
+### 4. View the Release
+
+After the workflow completes:
+
+1. Go to your repository main page
+2. Click **Releases** (right sidebar)
+3. You'll see the new release (e.g., "Release v1.0.0")
+4. Release includes:
+   - Docker pull commands
+   - Quick start instructions
+   - Automatic changelog
+   - Links to both registries
+
+Example:
+```
+Release v1.0.3
+Latest
+17 hours ago
+
+🚀 Docker Images Available
+- Docker Hub: sadiksajid/db-sync:v1.0.3
+- GHCR: ghcr.io/OWNER/REPO:v1.0.3
+```
+
+### 6. Find Your Images
 
 After the workflow completes, images are available in **two** places:
 
@@ -113,7 +137,7 @@ After the workflow completes, images are available in **two** places:
 3. You'll see your repository listed
 4. Click it to see all tags
 
-### 5. Make Images Public (Optional)
+### 7. Make Images Public (Optional)
 
 #### Make GHCR Image Public
 By default, GHCR images are private. To make public:
